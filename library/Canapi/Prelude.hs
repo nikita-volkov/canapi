@@ -80,10 +80,6 @@ import Data.ByteString as Exports (ByteString)
 -------------------------
 import Data.Text as Exports (Text)
 
--- managed
--------------------------
-import Control.Monad.Managed as Exports
-
 -- transformers
 -------------------------
 import Control.Monad.IO.Class as Exports
@@ -94,3 +90,7 @@ import Control.Monad.Trans.Maybe as Exports
 import Control.Monad.Trans.Reader as Exports (Reader, runReader, mapReader, withReader, ReaderT(ReaderT), runReaderT, mapReaderT, withReaderT)
 import Control.Monad.Trans.State.Strict as Exports (State, runState, evalState, execState, mapState, withState, StateT(StateT), runStateT, evalStateT, execStateT, mapStateT, withStateT)
 import Control.Monad.Trans.Writer.Strict as Exports (Writer, runWriter, execWriter, mapWriter, WriterT(..), execWriterT, mapWriterT)
+
+-- acquire
+-------------------------
+import Acquire as Exports (Acquire, Use)

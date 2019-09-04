@@ -19,15 +19,15 @@ import qualified Most.Types as MostTypes
 binary ::
   CerealGet.Get request ->
   (response -> CerealPut.Put) ->
-  (env -> actionEnv) ->
+  (env -> useEnv) ->
   (err -> Text) ->
-  (request -> Action actionEnv err response) ->
+  (request -> Use useEnv err response) ->
   Api env
-binary decoder encoder envProj errProj action = do
+binary decoder encoder envProj errProj use = do
   RequestParsing.methodIsPost
   RequestParsing.header "content-type" >>= guard . (==) "application/octet-stream"
   request <- RequestParsing.bodyWithParser (RequestBodyParsing.deserialize decoder)
-  response <- Parser.action envProj errProj (action request)
+  response <- Parser.use envProj errProj (use request)
   return
     (
       ResponseBuilding.okayStatus <>
@@ -42,11 +42,11 @@ most ::
   Word32 ->
   CerealGet.Get request ->
   (response -> CerealPut.Put) ->
-  (env -> actionEnv) ->
+  (env -> useEnv) ->
   (err -> Text) ->
-  (request -> Action actionEnv err response) ->
+  (request -> Use useEnv err response) ->
   Api env
-most version decoder encoder envProj errProj action = 
+most version decoder encoder envProj errProj use = 
   binary
     (CerealGet.versionedRequestDecoding version decoder)
     (CerealPut.versionedResponse version encoder)
@@ -54,6 +54,6 @@ most version decoder encoder envProj errProj action =
     (errProj)
     (\ case
       MostTypes.SupportedVersionedRequestDecoding request ->
-        fmap MostTypes.SupportedVersionedResponse (action request)
+        fmap MostTypes.SupportedVersionedResponse (use request)
       MostTypes.UnsupportedVersionedRequestDecoding _ ->
         pure MostTypes.UnsupportedVersionedResponse)
