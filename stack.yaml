@@ -1,0 +1,3 @@
+resolver: https://raw.githubusercontent.com/metrix-ai/stack-snapshot/52/snapshot.yaml
+extra-deps:
+- {git: "https://github.com/nikita-volkov/most.hs", commit: "acfb227620f9b39922af49bbd02354c293c2fa9e"}
