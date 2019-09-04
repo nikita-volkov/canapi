@@ -1,7 +1,7 @@
-module Canapi.Strelka.Managed where
+module Canapi.Managed where
 
 import Canapi.Prelude
-import Canapi.Strelka.Types
+import Canapi.Types
 import qualified Strelka.WAI as Wai
 
 

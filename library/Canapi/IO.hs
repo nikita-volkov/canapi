@@ -1,10 +1,10 @@
-module Canapi.Strelka.IO where
+module Canapi.IO where
 
 import Canapi.Prelude
-import Canapi.Strelka.Types
+import Canapi.Types
 import qualified Optima
-import qualified Canapi.Strelka.Optima.ParamGroup as Optima
-import qualified Canapi.Strelka.Managed as Managed
+import qualified Canapi.Optima.ParamGroup as Optima
+import qualified Canapi.Managed as Managed
 
 
 serve :: Word16 -> Managed env -> Api env -> IO ()

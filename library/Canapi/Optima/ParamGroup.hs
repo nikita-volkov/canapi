@@ -1,11 +1,11 @@
-module Canapi.Strelka.Optima.ParamGroup
+module Canapi.Optima.ParamGroup
 (
   settings,
 )
 where
 
 import Canapi.Prelude
-import Canapi.Strelka.Types
+import Canapi.Types
 import Optima
 
 

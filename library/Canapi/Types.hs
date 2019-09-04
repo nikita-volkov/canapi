@@ -1,4 +1,4 @@
-module Canapi.Strelka.Types where
+module Canapi.Types where
 
 import Canapi.Prelude
 import qualified Strelka.RequestParsing as RequestParsing
