@@ -29,3 +29,8 @@ binary decoder encoder envProj errProj fx = do
       ResponseBuilding.contentTypeHeader "application/octet-stream" <>
       ResponseBuilding.body (ResponseBodyBuilding.serialize (encoder response))
     )
+
+atSegment :: Text -> Api env -> Api env
+atSegment segment api = do
+  RequestParsing.segmentIs segment
+  api
