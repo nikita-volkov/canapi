@@ -9,4 +9,4 @@ import qualified Strelka.ResponseBodyBuilding as ResponseBodyBuilding
 
 type Api env = Parser env ResponseBuilding.Builder
 
-type Parser env = RequestParsing.Parser (Use env Text)
+type Parser env = RequestParsing.Parser (Fx env Text)

@@ -17,5 +17,5 @@ port =
     unformatted
     implicitlyParsed
 
-settings :: ParamGroup (Acquire env) -> ParamGroup (Word16, Acquire env)
+settings :: ParamGroup env -> ParamGroup (Word16, env)
 settings env = (,) <$> port <*> subgroup "env" env

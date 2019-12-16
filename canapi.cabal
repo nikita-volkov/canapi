@@ -27,16 +27,15 @@ library
     Canapi.Strelka.IO
     Canapi.Strelka.RequestBodyParsing
     Canapi.Strelka.ResponseBodyBuilding
-    Canapi.Parser
     Canapi.Prelude
   default-extensions: Arrows, BangPatterns, ConstraintKinds, DataKinds, DefaultSignatures, DeriveDataTypeable, DeriveFoldable, DeriveFunctor, DeriveGeneric, DeriveTraversable, EmptyDataDecls, FlexibleContexts, FlexibleInstances, FunctionalDependencies, GADTs, GeneralizedNewtypeDeriving, LambdaCase, LiberalTypeSynonyms, MagicHash, MultiParamTypeClasses, MultiWayIf, NoImplicitPrelude, NoMonomorphismRestriction, OverloadedStrings, PatternGuards, ParallelListComp, QuasiQuotes, RankNTypes, RecordWildCards, ScopedTypeVariables, StandaloneDeriving, TemplateHaskell, TupleSections, TypeFamilies, TypeOperators, UnboxedTuples
   default-language: Haskell2010
   build-depends:
-    acquire >=0.3 && <0.4,
-    base <5,
+    base >=4.10 && <5,
     bytestring >=0.10.8 && <0.11,
     cereal >=0.5.8.1 && <0.6,
-    most,
+    fx,
+    mmorph >=1.1 && <2,
     optima >=0.4 && <0.5,
     strelka >=2.0.5 && <2.1,
     strelka-core >=0.3 && <0.4,

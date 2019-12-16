@@ -7,7 +7,7 @@ where
 -- base
 -------------------------
 import Control.Applicative as Exports
-import Control.Arrow as Exports
+import Control.Arrow as Exports hiding (first, second)
 import Control.Category as Exports
 import Control.Concurrent as Exports
 import Control.Exception as Exports
@@ -16,6 +16,7 @@ import Control.Monad.IO.Class as Exports
 import Control.Monad.Fail as Exports
 import Control.Monad.Fix as Exports hiding (fix)
 import Control.Monad.ST as Exports
+import Data.Bifunctor as Exports
 import Data.Bits as Exports
 import Data.Bool as Exports
 import Data.Char as Exports
@@ -46,6 +47,7 @@ import Data.Traversable as Exports
 import Data.Tuple as Exports
 import Data.Unique as Exports
 import Data.Version as Exports
+import Data.Void as Exports
 import Data.Word as Exports
 import Debug.Trace as Exports
 import Foreign.ForeignPtr as Exports
@@ -91,6 +93,10 @@ import Control.Monad.Trans.Reader as Exports (Reader, runReader, mapReader, with
 import Control.Monad.Trans.State.Strict as Exports (State, runState, evalState, execState, mapState, withState, StateT(StateT), runStateT, evalStateT, execStateT, mapStateT, withStateT)
 import Control.Monad.Trans.Writer.Strict as Exports (Writer, runWriter, execWriter, mapWriter, WriterT(..), execWriterT, mapWriterT)
 
--- acquire
+-- fx
 -------------------------
-import Acquire as Exports (Acquire, Use)
+import Fx as Exports
+
+-- mmorph
+-------------------------
+import Control.Monad.Morph as Exports
