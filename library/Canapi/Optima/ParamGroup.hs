@@ -5,7 +5,6 @@ module Canapi.Optima.ParamGroup
 where
 
 import Canapi.Prelude
-import Canapi.Types
 import Optima
 
 
