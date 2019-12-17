@@ -25,16 +25,16 @@ import qualified Data.Serialize.Put as CerealPut
 -- * IO
 -------------------------
 
-serve :: Word16 -> Provider Text env -> Resource env -> IO ()
-serve port envProvider (Resource parser) = StrelkaIO.serve port envProvider parser
+serve :: Resource env -> Word16 -> Provider Text env -> IO ()
+serve (Resource parser) port envProvider = StrelkaIO.serve port envProvider parser
 
 {-|
 Parse CLI args and produce an exception-free IO-action, which runs a server.
 -}
-serveParsingCliArgs :: Text -> Optima.ParamGroup envArgs -> (envArgs -> Provider Text env) -> Resource env -> IO ()
-serveParsingCliArgs appDesc envParamGroup provider api = do
+serveParsingCliArgs :: Resource env -> Text -> Optima.ParamGroup envArgs -> (envArgs -> Provider Text env) -> IO ()
+serveParsingCliArgs api appDesc envParamGroup provider = do
   (port, envArgs) <- Optima.params appDesc $ Optima.group "" $ Optima.settings envParamGroup
-  serve port (provider envArgs) api
+  serve api port (provider envArgs)
 
 
 -- * Resource
