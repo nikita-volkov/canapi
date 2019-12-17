@@ -49,6 +49,9 @@ instance Monoid (Api env) where
   mempty = Api empty
   mappend = (<>)
 
+instance Contravariant Api where
+  contramap f (Api a) = Api (a & hoist (mapEnv f))
+
 atSegment :: Text -> Api env -> Api env
 atSegment segment (Api nested) = Api $ do
   RequestParsing.segmentIs segment
