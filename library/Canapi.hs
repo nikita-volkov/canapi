@@ -29,10 +29,14 @@ serve :: Resource env -> Word16 -> Bool -> Provider Text env -> IO Void
 serve (Resource parser) port cors envProvider =
   runFx $ handleErr (fail . Text.unpack) $ provideAndUse envProvider $ handleEnv $ \ env ->
   runTotalIO $ do
-    Warp.run (fromIntegral port) $ (if cors then WaiCors.simpleCors else id) $ \ request cont -> do
+    Warp.run (fromIntegral port) $ (if cors then corsApp else id) $ \ request cont -> do
       waiResponse <- runFx $ handleErr (fail . Text.unpack) $ provideAndUse (pure env) $ parser request
       cont waiResponse
     fail "The server stopped"
+  where
+    corsApp = WaiCors.cors (const (Just policy))
+      where
+        policy = WaiCors.simpleCorsResourcePolicy { WaiCors.corsRequestHeaders = WaiCors.simpleHeaders }
 
 {-|
 Parse CLI args and produce an exception-free IO-action, which runs a server.
