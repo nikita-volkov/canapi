@@ -27,7 +27,10 @@ import qualified Network.Wai.Handler.Warp as Warp
 -------------------------
 
 serve :: Resource env -> Word16 -> Bool -> Provider Text env -> IO ()
-serve (Resource parser) port cors envProvider = StrelkaIO.serve port cors envProvider parser
+serve (Resource parser) port cors envProvider =
+  let
+    parser' = parser <|> pure (ResponseBuilding.notFoundStatus)
+    in StrelkaIO.serve port cors envProvider parser'
 
 {-|
 Parse CLI args and produce an exception-free IO-action, which runs a server.
