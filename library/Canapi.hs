@@ -57,6 +57,11 @@ atSegment segment (Resource nested) = Resource $ do
   RequestParsing.segmentIs segment
   nested
 
+{-|
+Binary protocol resource.
+
+Only supports to the @POST@ method.
+-}
 binary ::
   CerealGet.Get request ->
   (response -> CerealPut.Put) ->
