@@ -16,5 +16,10 @@ port =
     unformatted
     implicitlyParsed
 
-settings :: ParamGroup env -> ParamGroup (Word16, env)
-settings env = (,) <$> port <*> subgroup "env" env
+cors :: ParamGroup Bool
+cors =
+  True <$ member "cors" (flag "Enable simple cors") <|>
+  pure True
+
+settings :: ParamGroup env -> ParamGroup (Word16, Bool, env)
+settings env = (,,) <$> port <*> cors <*> subgroup "env" env

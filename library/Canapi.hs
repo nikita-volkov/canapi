@@ -19,21 +19,23 @@ import qualified Canapi.Optima.ParamGroup as Optima
 import qualified Optima
 import qualified Data.Serialize.Get as CerealGet
 import qualified Data.Serialize.Put as CerealPut
+import qualified Network.Wai.Middleware.Cors as WaiCors
+import qualified Network.Wai.Handler.Warp as Warp
 
 
 -- * IO
 -------------------------
 
-serve :: Resource env -> Word16 -> Provider Text env -> IO ()
-serve (Resource parser) port envProvider = StrelkaIO.serve port envProvider parser
+serve :: Resource env -> Word16 -> Bool -> Provider Text env -> IO ()
+serve (Resource parser) port cors envProvider = StrelkaIO.serve port cors envProvider parser
 
 {-|
 Parse CLI args and produce an exception-free IO-action, which runs a server.
 -}
 serveParsingCliArgs :: Resource env -> Text -> Optima.ParamGroup envArgs -> (envArgs -> Provider Text env) -> IO ()
 serveParsingCliArgs api appDesc envParamGroup provider = do
-  (port, envArgs) <- Optima.params appDesc $ Optima.group "" $ Optima.settings envParamGroup
-  serve api port (provider envArgs)
+  (port, cors, envArgs) <- Optima.params appDesc $ Optima.group "" $ Optima.settings envParamGroup
+  serve api port cors (provider envArgs)
 
 
 -- * Resource

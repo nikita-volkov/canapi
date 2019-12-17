@@ -38,4 +38,6 @@ library
     strelka-core >=0.3 && <0.4,
     strelka-wai >=1.0.1.1 && <1.1,
     text >=1.2 && <2,
-    transformers >=0.5 && <0.6
+    transformers >=0.5 && <0.6,
+    warp >=3.2 && <3.4,
+    wai-cors >=0.2.7 && <0.3
