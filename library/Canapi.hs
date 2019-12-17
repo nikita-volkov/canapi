@@ -13,7 +13,6 @@ import qualified Strelka.RequestParsing as RequestParsing
 import qualified Strelka.ResponseBuilding as ResponseBuilding
 import qualified Strelka.RequestBodyParsing as RequestBodyParsing
 import qualified Strelka.ResponseBodyBuilding as ResponseBodyBuilding
-import qualified Canapi.Strelka.RequestBodyParsing as RequestBodyParsing
 import qualified Canapi.Strelka.ResponseBodyBuilding as ResponseBodyBuilding
 import qualified Canapi.Strelka.IO as StrelkaIO
 import qualified Canapi.Optima.ParamGroup as Optima
@@ -72,10 +71,16 @@ binary ::
 binary decoder encoder envProj errProj fx = Resource $ do
   RequestParsing.methodIsPost
   RequestParsing.header "content-type" >>= guard . (==) "application/octet-stream"
-  request <- hoist runTotalIO $ RequestParsing.bodyWithParser $ RequestBodyParsing.deserialize decoder
-  response <- lift $ mapEnv envProj $ first errProj $ fx request
-  return (
-      ResponseBuilding.okayStatus <>
-      ResponseBuilding.contentTypeHeader "application/octet-stream" <>
-      ResponseBuilding.body (ResponseBodyBuilding.serialize (encoder response))
-    )
+  requestBytes <- hoist runTotalIO $ RequestParsing.body
+  case CerealGet.runGet decoder requestBytes of
+    Right request -> do
+      response <- lift $ mapEnv envProj $ first errProj $ fx request
+      return (
+          ResponseBuilding.okayStatus <>
+          ResponseBuilding.contentTypeHeader "application/octet-stream" <>
+          ResponseBuilding.body (ResponseBodyBuilding.serialize (encoder response))
+        )
+    Left error -> return (
+        ResponseBuilding.badRequestStatus <>
+        ResponseBuilding.text (fromString error)
+      )
