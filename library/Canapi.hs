@@ -2,8 +2,8 @@ module Canapi (
     -- * IO
     serve,
     serveParsingCliArgs,
-    -- * Api
-    Api,
+    -- * Resource
+    Resource,
     atSegment,
     binary,
   ) where
@@ -25,35 +25,35 @@ import qualified Data.Serialize.Put as CerealPut
 -- * IO
 -------------------------
 
-serve :: Word16 -> Provider Text env -> Api env -> IO ()
-serve port envProvider (Api parser) = StrelkaIO.serve port envProvider parser
+serve :: Word16 -> Provider Text env -> Resource env -> IO ()
+serve port envProvider (Resource parser) = StrelkaIO.serve port envProvider parser
 
 {-|
 Parse CLI args and produce an exception-free IO-action, which runs a server.
 -}
-serveParsingCliArgs :: Text -> Optima.ParamGroup envArgs -> (envArgs -> Provider Text env) -> Api env -> IO ()
+serveParsingCliArgs :: Text -> Optima.ParamGroup envArgs -> (envArgs -> Provider Text env) -> Resource env -> IO ()
 serveParsingCliArgs appDesc envParamGroup provider api = do
   (port, envArgs) <- Optima.params appDesc $ Optima.group "" $ Optima.settings envParamGroup
   serve port (provider envArgs) api
 
 
--- * Api
+-- * Resource
 -------------------------
 
-newtype Api env = Api (RequestParsing.Parser (Fx env Text) ResponseBuilding.Builder)
+newtype Resource env = Resource (RequestParsing.Parser (Fx env Text) ResponseBuilding.Builder)
 
-instance Semigroup (Api env) where
-  (<>) (Api a) (Api b) = Api (a <|> b)
+instance Semigroup (Resource env) where
+  (<>) (Resource a) (Resource b) = Resource (a <|> b)
 
-instance Monoid (Api env) where
-  mempty = Api empty
+instance Monoid (Resource env) where
+  mempty = Resource empty
   mappend = (<>)
 
-instance Contravariant Api where
-  contramap f (Api a) = Api (a & hoist (mapEnv f))
+instance Contravariant Resource where
+  contramap f (Resource a) = Resource (a & hoist (mapEnv f))
 
-atSegment :: Text -> Api env -> Api env
-atSegment segment (Api nested) = Api $ do
+atSegment :: Text -> Resource env -> Resource env
+atSegment segment (Resource nested) = Resource $ do
   RequestParsing.segmentIs segment
   nested
 
@@ -63,8 +63,8 @@ binary ::
   (env -> apiEnv) ->
   (err -> Text) ->
   (request -> Fx apiEnv err response) ->
-  Api env
-binary decoder encoder envProj errProj fx = Api $ do
+  Resource env
+binary decoder encoder envProj errProj fx = Resource $ do
   RequestParsing.methodIsPost
   RequestParsing.header "content-type" >>= guard . (==) "application/octet-stream"
   request <- hoist runTotalIO $ RequestParsing.bodyWithParser $ RequestBodyParsing.deserialize decoder
