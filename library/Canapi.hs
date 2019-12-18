@@ -23,6 +23,7 @@ import qualified Network.Wai.Middleware.Cors as WaiCors
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.HTTP.Types as HttpTypes
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
 
 
 -- * IO
@@ -109,7 +110,9 @@ binary decoder encoder envProj errProj fx = Resource $ \ request ->
                     "Warp has set an unexpected remoteHost address: " <> show sockAddr <> ". " <>
                     "Please report this to the maintainers of the \"canapi\" package."
                   )
-              in ClientInfo ip (Wai.requestHeaderUserAgent request) (Wai.requestHeaderReferer request)
+              userAgent = fmap Text.decodeLatin1 (Wai.requestHeaderUserAgent request)
+              referer = fmap Text.decodeLatin1 (Wai.requestHeaderReferer request)
+              in ClientInfo ip userAgent referer
             in mapEnv envProj $ first errProj $ fx clientInfo decodedRequest
           let
             waiResponse =
@@ -127,6 +130,6 @@ binary decoder encoder envProj errProj fx = Resource $ \ request ->
 
 data ClientInfo = ClientInfo {
     _ip :: IP,
-    _userAgent :: Maybe ByteString,
-    _referer :: Maybe ByteString
+    _userAgent :: Maybe Text,
+    _referer :: Maybe Text
   }
