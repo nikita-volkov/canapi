@@ -82,7 +82,7 @@ atSegment expectedSegment (Resource nested) = Resource $ \ request ->
 {-|
 Binary protocol resource.
 
-Only supports to the @POST@ method.
+Only supports the @POST@ method.
 -}
 binary ::
   CerealGet.Get request ->
