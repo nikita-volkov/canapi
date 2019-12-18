@@ -21,6 +21,7 @@ library
   exposed-modules:
     Canapi
   other-modules:
+    Canapi.Ip
     Canapi.Optima.ParamGroup
     Canapi.Prelude
   default-extensions: Arrows, BangPatterns, ConstraintKinds, DataKinds, DefaultSignatures, DeriveDataTypeable, DeriveFoldable, DeriveFunctor, DeriveGeneric, DeriveTraversable, EmptyDataDecls, FlexibleContexts, FlexibleInstances, FunctionalDependencies, GADTs, GeneralizedNewtypeDeriving, LambdaCase, LiberalTypeSynonyms, MagicHash, MultiParamTypeClasses, MultiWayIf, NoImplicitPrelude, NoMonomorphismRestriction, OverloadedStrings, PatternGuards, ParallelListComp, QuasiQuotes, RankNTypes, RecordWildCards, ScopedTypeVariables, StandaloneDeriving, TemplateHaskell, TupleSections, TypeFamilies, TypeOperators, UnboxedTuples
@@ -29,11 +30,15 @@ library
     base >=4.10 && <5,
     bytestring >=0.10.8 && <0.11,
     cereal >=0.5.8.1 && <0.6,
+    cpu >=0.1.2 && <0.2,
     fx,
     http-types >=0.12 && <0.13,
+    network >=3 && <4,
+    network-ip >=0.3.0.3 && <0.4,
     optima >=0.4 && <0.5,
     text >=1.2 && <2,
     transformers >=0.5 && <0.6,
+    tuple >=0.3.0.2 && <0.4,
     wai >=3.2 && <3.3,
     wai-cors >=0.2.7 && <0.3,
     warp >=3.2 && <3.4

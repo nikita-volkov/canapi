@@ -6,11 +6,14 @@ module Canapi (
     Resource,
     atSegment,
     binary,
+    -- * Metadata
+    ClientInfo(..),
   ) where
 
 import Canapi.Prelude
 import qualified Canapi.Optima.ParamGroup as Optima
 import qualified Canapi.Optima.ParamGroup as Optima
+import qualified Canapi.Ip as Ip
 import qualified Optima
 import qualified Data.Serialize.Get as CerealGet
 import qualified Data.Serialize.Put as CerealPut
@@ -89,15 +92,25 @@ binary ::
   (response -> CerealPut.Put) ->
   (env -> apiEnv) ->
   (err -> Text) ->
-  (request -> Fx apiEnv err response) ->
+  (ClientInfo -> request -> Fx apiEnv err response) ->
   Resource env
 binary decoder encoder envProj errProj fx = Resource $ \ request ->
   if Wai.requestMethod request == HttpTypes.methodPost
     then do
       requestBody <- runTotalIO $ Wai.strictRequestBody request
       case CerealGet.runGetLazy decoder requestBody of
-        Right request -> do
-          response <- mapEnv envProj $ first errProj $ fx request
+        Right decodedRequest -> do
+          response <- let
+            clientInfo = let
+              sockAddr = Wai.remoteHost request
+              ip = case Ip.sockAddrIP sockAddr of
+                Just a -> a
+                Nothing -> error (
+                    "Warp has set an unexpected remoteHost address: " <> show sockAddr <> ". " <>
+                    "Please report this to the maintainers of the \"canapi\" package."
+                  )
+              in ClientInfo ip (Wai.requestHeaderUserAgent request) (Wai.requestHeaderReferer request)
+            in mapEnv envProj $ first errProj $ fx clientInfo decodedRequest
           let
             waiResponse =
               Wai.responseBuilder
@@ -107,3 +120,13 @@ binary decoder encoder envProj errProj fx = Resource $ \ request ->
             in return waiResponse
         Left err -> return (Wai.responseLBS HttpTypes.status400 [] (fromString err))
     else return (Wai.responseLBS HttpTypes.status405 [] "")
+
+
+-- * Metadata
+-------------------------
+
+data ClientInfo = ClientInfo {
+    _ip :: IP,
+    _userAgent :: Maybe ByteString,
+    _referer :: Maybe ByteString
+  }

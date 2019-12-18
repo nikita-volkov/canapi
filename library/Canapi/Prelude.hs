@@ -96,3 +96,11 @@ import Control.Monad.Trans.Writer.Strict as Exports (Writer, runWriter, execWrit
 -- fx
 -------------------------
 import Fx as Exports
+
+-- tuple
+-------------------------
+import Data.Tuple.All as Exports
+
+-- network-ip
+-------------------------
+import Network.IP.Addr as Exports (IP, NetAddr)
