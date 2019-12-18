@@ -96,7 +96,3 @@ import Control.Monad.Trans.Writer.Strict as Exports (Writer, runWriter, execWrit
 -- fx
 -------------------------
 import Fx as Exports
-
--- mmorph
--------------------------
-import Control.Monad.Morph as Exports
