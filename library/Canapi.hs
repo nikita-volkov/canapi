@@ -91,11 +91,9 @@ Only supports the @POST@ method.
 binary ::
   CerealGet.Get request ->
   (response -> CerealPut.Put) ->
-  (env -> apiEnv) ->
-  (err -> Text) ->
-  (ClientInfo -> request -> Fx apiEnv err response) ->
+  (ClientInfo -> request -> Fx env Text response) ->
   Resource env
-binary decoder encoder envProj errProj fx = Resource $ \ request ->
+binary decoder encoder fx = Resource $ \ request ->
   if Wai.requestMethod request == HttpTypes.methodPost
     then do
       requestBody <- runTotalIO $ Wai.strictRequestBody request
@@ -113,7 +111,7 @@ binary decoder encoder envProj errProj fx = Resource $ \ request ->
               userAgent = fmap Text.decodeLatin1 (Wai.requestHeaderUserAgent request)
               referer = fmap Text.decodeLatin1 (Wai.requestHeaderReferer request)
               in ClientInfo ip userAgent referer
-            in mapEnv envProj $ first errProj $ fx clientInfo decodedRequest
+            in fx clientInfo decodedRequest
           let
             waiResponse =
               Wai.responseBuilder
