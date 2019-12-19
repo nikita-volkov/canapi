@@ -27,3 +27,8 @@ hostAddress6Ip6 = uncurryN ip6FromWords . Network.hostAddress6ToTuple
 
 portNumberInetPort :: Network.PortNumber -> InetPort
 portNumberInetPort = fromIntegral
+
+ipNetAddr :: IP -> NetAddr IP
+ipNetAddr = \ case
+  IPv4 a -> fromNetAddr46 (IPv4 (net4Addr a 32))
+  IPv6 a -> fromNetAddr46 (IPv6 (net6Addr a 128))
