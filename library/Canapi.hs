@@ -13,7 +13,7 @@ module Canapi (
 import Canapi.Prelude
 import qualified Canapi.Optima.ParamGroup as Optima
 import qualified Canapi.Optima.ParamGroup as Optima
-import qualified Canapi.Ip as Ip
+import qualified Canapi.NetworkIp as NetworkIp
 import qualified Optima
 import qualified Data.Serialize.Get as CerealGet
 import qualified Data.Serialize.Put as CerealPut
@@ -104,7 +104,7 @@ binary decoder encoder envProj errProj fx = Resource $ \ request ->
           response <- let
             clientInfo = let
               sockAddr = Wai.remoteHost request
-              ip = case Ip.sockAddrIP sockAddr of
+              ip = case NetworkIp.sockAddrIP sockAddr of
                 Just a -> a
                 Nothing -> error (
                     "Warp has set an unexpected remoteHost address: " <> show sockAddr <> ". " <>

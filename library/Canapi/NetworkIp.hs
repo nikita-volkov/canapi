@@ -1,4 +1,4 @@
-module Canapi.Ip
+module Canapi.NetworkIp
 where
 
 import Canapi.Prelude
