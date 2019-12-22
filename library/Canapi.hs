@@ -6,6 +6,8 @@ module Canapi (
     Resource,
     atSegment,
     binary,
+    -- ** Low-level
+    waiApplication,
     -- * Metadata
     ClientInfo(..),
   ) where
@@ -33,9 +35,8 @@ serve :: Resource env -> Word16 -> Bool -> Provider Text env -> IO Void
 serve (Resource parser) port cors envProvider =
   runFx $ handleErr (fail . Text.unpack) $ provideAndUse envProvider $ handleEnv $ \ env ->
   runTotalIO $ do
-    Warp.run (fromIntegral port) $ (if cors then corsApp else id) $ \ request cont -> do
-      waiResponse <- runFx $ handleErr (fail . Text.unpack) $ provideAndUse (pure env) $ parser request
-      cont waiResponse
+    Warp.run (fromIntegral port) $ (if cors then corsApp else id) $ \ request cont ->
+      runFx $ handleErr (fail . Text.unpack) $ provideAndUse (pure env) $ parser request cont
     fail "The server stopped"
   where
     corsApp = WaiCors.cors (const (Just policy))
@@ -54,18 +55,18 @@ serveParsingCliArgs api appDesc envParamGroup provider = do
 -- * Resource
 -------------------------
 
-newtype Resource env = Resource (Wai.Request -> Fx env Text Wai.Response)
+newtype Resource env = Resource (Wai.Request -> (Wai.Response -> IO Wai.ResponseReceived) -> Fx env Text Wai.ResponseReceived)
 
 instance Semigroup (Resource env) where
-  (<>) (Resource a) (Resource b) = Resource $ \ request -> do
-    response1 <- a request
-    let statusCode1 = HttpTypes.statusCode (Wai.responseStatus response1)
-    if statusCode1 >= 400 && statusCode1 < 500
-      then b request
-      else return response1
+  (<>) (Resource a) (Resource b) = Resource $ \ request respond -> handleEnv $ \ env ->
+    a request $ \ response1 -> do
+      let statusCode1 = HttpTypes.statusCode (Wai.responseStatus response1)
+      if statusCode1 >= 400 && statusCode1 < 500
+        then runFx $ handleErr (fail . Text.unpack) $ provideAndUse (pure env) $ b request respond
+        else respond response1
 
 instance Monoid (Resource env) where
-  mempty = Resource (const (return (Wai.responseLBS HttpTypes.status404 [] "")))
+  mempty = Resource (\ _ respond -> runTotalIO (respond (Wai.responseLBS HttpTypes.status404 [] "")))
   mappend = (<>)
   mconcat = \ case
     a : [] -> a
@@ -73,15 +74,15 @@ instance Monoid (Resource env) where
     [] -> mempty
 
 instance Contravariant Resource where
-  contramap f (Resource a) = Resource (mapEnv f . a)
+  contramap f (Resource a) = Resource (\ request respond -> mapEnv f (a request respond))
 
 atSegment :: Text -> Resource env -> Resource env
-atSegment expectedSegment (Resource nested) = Resource $ \ request ->
+atSegment expectedSegment (Resource nested) = Resource $ \ request respond ->
   case Wai.pathInfo request of
     segmentsHead : segmentsTail -> if expectedSegment == segmentsHead
-      then nested (request { Wai.pathInfo = segmentsTail })
-      else return (Wai.responseLBS HttpTypes.status404 [] "")
-    _ -> return (Wai.responseLBS HttpTypes.status404 [] "")
+      then nested (request { Wai.pathInfo = segmentsTail }) respond
+      else runTotalIO (respond (Wai.responseLBS HttpTypes.status404 [] ""))
+    _ -> runTotalIO (respond (Wai.responseLBS HttpTypes.status404 [] ""))
 
 {-|
 Binary protocol resource.
@@ -93,7 +94,7 @@ binary ::
   (response -> CerealPut.Put) ->
   (ClientInfo -> request -> Fx env Text response) ->
   Resource env
-binary decoder encoder fx = Resource $ \ request ->
+binary decoder encoder fx = Resource $ \ request respond ->
   if Wai.requestMethod request == HttpTypes.methodPost
     then do
       requestBody <- runTotalIO $ Wai.strictRequestBody request
@@ -118,9 +119,15 @@ binary decoder encoder fx = Resource $ \ request ->
                 HttpTypes.status200
                 []
                 (CerealPut.execPut (encoder response))
-            in return waiResponse
-        Left err -> return (Wai.responseLBS HttpTypes.status400 [] (fromString err))
-    else return (Wai.responseLBS HttpTypes.status405 [] "")
+            in runTotalIO (respond waiResponse)
+        Left err -> runTotalIO (respond (Wai.responseLBS HttpTypes.status400 [] (fromString err)))
+    else runTotalIO (respond (Wai.responseLBS HttpTypes.status405 [] ""))
+
+-- ** Low-level
+-------------------------
+
+waiApplication :: Wai.Application -> Resource env
+waiApplication application = Resource $ \ request respond -> runTotalIO $ application request respond
 
 
 -- * Metadata
