@@ -7,6 +7,7 @@ module Canapi (
     atSegment,
     binary,
     directory,
+    indexFile,
     -- ** Low-level
     waiApplication,
     -- * Metadata
@@ -15,7 +16,7 @@ module Canapi (
 
 import Canapi.Prelude
 import qualified Canapi.Optima.ParamGroup as Optima
-import qualified Canapi.Optima.ParamGroup as Optima
+import qualified Canapi.Wai.Response as Response
 import qualified Canapi.NetworkIp as NetworkIp
 import qualified Optima
 import qualified Data.Serialize.Get as CerealGet
@@ -68,7 +69,7 @@ instance Semigroup (Resource env) where
         else respond response1
 
 instance Monoid (Resource env) where
-  mempty = Resource (\ _ respond -> runTotalIO (respond (Wai.responseLBS HttpTypes.status404 [] "")))
+  mempty = Resource (\ _ respond -> runTotalIO (respond Response.notFound))
   mappend = (<>)
   mconcat = \ case
     a : [] -> a
@@ -83,8 +84,8 @@ atSegment expectedSegment (Resource nested) = Resource $ \ request respond ->
   case Wai.pathInfo request of
     segmentsHead : segmentsTail -> if expectedSegment == segmentsHead
       then nested (request { Wai.pathInfo = segmentsTail }) respond
-      else runTotalIO (respond (Wai.responseLBS HttpTypes.status404 [] ""))
-    _ -> runTotalIO (respond (Wai.responseLBS HttpTypes.status404 [] ""))
+      else runTotalIO (respond Response.notFound)
+    _ -> runTotalIO (respond Response.notFound)
 
 {-|
 Binary protocol resource.
@@ -127,6 +128,13 @@ binary decoder encoder fx = Resource $ \ request respond ->
 
 directory :: FilePath -> Resource env
 directory path = waiApplication $ WaiStatic.staticApp $ WaiStatic.defaultWebAppSettings path
+
+indexFile :: Text -> FilePath -> Resource env
+indexFile contentType path = Resource $ \ request respond ->
+  case Wai.pathInfo request of
+    [] -> runTotalIO $ respond $ Wai.responseFile HttpTypes.status200 [("Content-Type", Text.encodeUtf8 contentType)] path Nothing
+    _ -> runTotalIO $ respond $ Response.notFound
+
 
 -- ** Low-level
 -------------------------
