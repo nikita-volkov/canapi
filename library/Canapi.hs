@@ -24,6 +24,7 @@ import qualified Data.Serialize.Put as CerealPut
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Internal as Wai
 import qualified Network.Wai.Application.Static as WaiStatic
+import qualified WaiAppStatic.Types as WaiStatic
 import qualified Network.Wai.Middleware.Cors as WaiCors
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.HTTP.Types as HttpTypes
@@ -126,8 +127,13 @@ binary decoder encoder fx = Resource $ \ request respond ->
         Left err -> runTotalIO (respond (Wai.responseLBS HttpTypes.status400 [] (fromString err)))
     else runTotalIO (respond (Wai.responseLBS HttpTypes.status405 [] ""))
 
-directory :: FilePath -> Resource env
-directory path = waiApplication $ WaiStatic.staticApp $ WaiStatic.defaultWebAppSettings path
+directory :: Int -> FilePath -> Resource env
+directory ageInSeconds path = let
+  settings =
+    (WaiStatic.defaultWebAppSettings path) {
+        WaiStatic.ssMaxAge = WaiStatic.MaxAgeSeconds ageInSeconds
+      }
+  in waiApplication (WaiStatic.staticApp settings)
 
 indexFile :: Text -> FilePath -> Resource env
 indexFile contentType path = Resource $ \ request respond ->
