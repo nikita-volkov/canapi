@@ -127,11 +127,11 @@ binary decoder encoder fx = Resource $ \ request respond ->
         Left err -> runTotalIO (respond (Wai.responseLBS HttpTypes.status400 [] (fromString err)))
     else runTotalIO (respond (Wai.responseLBS HttpTypes.status405 [] ""))
 
-directory :: Int -> FilePath -> Resource env
-directory ageInSeconds path = let
+directory :: FilePath -> Resource env
+directory path = let
   settings =
     (WaiStatic.defaultWebAppSettings path) {
-        WaiStatic.ssMaxAge = WaiStatic.MaxAgeSeconds ageInSeconds
+        WaiStatic.ssMaxAge = WaiStatic.NoMaxAge
       }
   in waiApplication (WaiStatic.staticApp settings)
 
