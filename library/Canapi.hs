@@ -159,6 +159,13 @@ post = error "TODO"
 get :: ContentEncoder response -> Fx env Text response -> Resource env
 get = error "TODO"
 
+temporaryRedirect :: Int -> Text -> Resource env
+temporaryRedirect timeout uri = Resource $ \ _ respond -> runTotalIO (respond response) where
+  response = Wai.responseBuilder HttpTypes.status307 headers "" where
+    headers = [cacheControl, location] where
+      cacheControl = ("cache-control", "max-age=" <> fromString (show timeout))
+      location = ("location", Text.encodeUtf8 uri)
+
 
 -- ** Low-level
 -------------------------
