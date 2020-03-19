@@ -30,6 +30,9 @@ import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.HTTP.Types as HttpTypes
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
+import qualified Data.Attoparsec.Text as Attoparsec
+import qualified Data.Aeson as Aeson
+import qualified Data.HashMap.Strict as HashMap
 
 
 -- * IO
@@ -88,6 +91,15 @@ atSegment expectedSegment (Resource nested) = Resource $ \ request respond ->
       else runTotalIO (respond Response.notFound)
     _ -> runTotalIO (respond Response.notFound)
 
+bySegment :: (Text -> Resource env) -> Resource env
+bySegment = error "TODO"
+
+parsingSegment :: Attoparsec.Parser segment -> (segment -> Resource env) -> Resource env
+parsingSegment = error "TODO"
+
+authenticating :: (Text -> Text -> Fx env Text (Maybe identity)) -> (identity -> Resource env) -> Resource env
+authenticating = error "TODO"
+
 {-|
 Binary protocol resource.
 
@@ -141,6 +153,12 @@ indexFile contentType path = Resource $ \ request respond ->
     [] -> runTotalIO $ respond $ Wai.responseFile HttpTypes.status200 [("Content-Type", Text.encodeUtf8 contentType)] path Nothing
     _ -> runTotalIO $ respond $ Response.notFound
 
+post :: ContentDecoder request -> ContentEncoder response -> (request -> Fx env Text response) -> Resource env
+post = error "TODO"
+
+get :: ContentEncoder response -> Fx env Text response -> Resource env
+get = error "TODO"
+
 
 -- ** Low-level
 -------------------------
@@ -157,3 +175,52 @@ data ClientInfo = ClientInfo {
     _userAgent :: Maybe Text,
     _referer :: Maybe Text
   }
+
+
+-- * Decoder
+-------------------------
+
+{-| Request content parser. -}
+newtype ContentDecoder request = ContentDecoder (HashMap Text (ByteString -> Either Text request))
+
+instance Semigroup (ContentDecoder request) where
+  (<>) (ContentDecoder a) (ContentDecoder b) = ContentDecoder (HashMap.unionWith unite a b) where
+    unite a b input = a input & either (const (b input)) Right
+
+instance Monoid (ContentDecoder request) where
+  mempty = ContentDecoder HashMap.empty
+  mappend = (<>)
+
+deriving instance Functor ContentDecoder
+
+ofJson :: (Aeson.Value -> Either Text request) -> ContentDecoder request
+ofJson = error "TODO"
+
+ofBinary :: CerealGet.Get request -> ContentDecoder request
+ofBinary = error "TODO"
+
+
+-- * Encoder
+-------------------------
+
+{-| Response content renderer. -}
+newtype ContentEncoder response = ContentEncoder (HashMap Text (response -> ByteString))
+
+instance Semigroup (ContentEncoder response) where
+  (<>) (ContentEncoder a) (ContentEncoder b) = ContentEncoder (HashMap.union a b)
+
+instance Monoid (ContentEncoder response) where
+  mempty = ContentEncoder HashMap.empty
+  mappend = (<>)
+
+instance Contravariant ContentEncoder where
+  contramap fn (ContentEncoder map) = ContentEncoder (fmap (. fn) map)
+
+asJson :: (response -> Aeson.Value) -> ContentEncoder response
+asJson = error "TODO"
+
+asBinary :: (response -> CerealPut.Put) -> ContentEncoder response
+asBinary = error "TODO"
+
+asFile :: ContentEncoder FilePath
+asFile = error "TODO"
