@@ -104,3 +104,7 @@ import Data.Tuple.All as Exports
 -- network-ip
 -------------------------
 import Network.IP.Addr as Exports (IP, NetAddr)
+
+-- unordered-containers
+-------------------------
+import Data.HashMap.Strict as Exports (HashMap)
