@@ -12,7 +12,8 @@ data RequestMetadata = RequestMetadata {
     userAgent :: Maybe Text,
     referer :: Maybe Text,
     contentType :: Maybe Type,
-    acceptPreference :: [Type]
+    contentTypeHeader :: Maybe ByteString,
+    acceptHeader :: Maybe ByteString
   }
 
 {-|
@@ -33,3 +34,7 @@ data HeadersOfInterest = HeadersOfInterest {
     contentType :: Maybe ByteString,
     accept :: Maybe ByteString
   }
+
+deriving instance Eq Type
+deriving instance Generic Type
+instance Hashable Type

@@ -15,9 +15,8 @@ import qualified Control.Foldl as Foldl
 
 requestMetadata :: Wai.Request -> RequestMetadata
 requestMetadata request =
-  RequestMetadata ip userAgent referer contentType acceptPreference
+  RequestMetadata ip userAgent referer contentType contentTypeHeader acceptHeader
   where
-    headerMapVal = headerMap request
     sockAddr = Wai.remoteHost request
     ip = case NetworkIp.sockAddrIP sockAddr of
       Just a -> a
@@ -29,7 +28,6 @@ requestMetadata request =
     referer = fmap Text.decodeLatin1 (Wai.requestHeaderReferer request)
     HeadersOfInterest contentTypeHeader acceptHeader = headersOfInterest request
     contentType = contentTypeHeader >>= HeaderParsing.contentType
-    acceptPreference = catMaybes [acceptHeader >>= HeaderParsing.accept, contentType]
 
 headerMap :: Wai.Request -> HashMap ByteString ByteString
 headerMap = Wai.requestHeaders >>> fmap (first CaseInsensitive.foldedCase) >>> HashMap.fromList
