@@ -92,7 +92,7 @@ binary ::
   (response -> CerealPut.Put) ->
   (ClientInfo -> request -> IO response) ->
   Resource
-binary decoder encoder fx = Resource $ \ request respond ->
+binary decoder encoder handler = Resource $ \ request respond ->
   if Wai.requestMethod request == HttpTypes.methodPost
     then do
       requestBody <- Wai.strictRequestBody request
@@ -110,7 +110,7 @@ binary decoder encoder fx = Resource $ \ request respond ->
               userAgent = fmap Text.decodeLatin1 (Wai.requestHeaderUserAgent request)
               referer = fmap Text.decodeLatin1 (Wai.requestHeaderReferer request)
               in ClientInfo ip userAgent referer
-            in fx clientInfo decodedRequest
+            in handler clientInfo decodedRequest
           let
             waiResponse =
               Wai.responseBuilder
