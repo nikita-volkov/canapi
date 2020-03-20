@@ -135,11 +135,11 @@ indexFile contentType path = Resource $ \ request respond ->
     [] -> respond $ Wai.responseFile HttpTypes.status200 [("Content-Type", Text.encodeUtf8 contentType)] path Nothing
     _ -> respond $ Response.notFound
 
-post :: ContentDecoder request -> ContentEncoder response -> (request -> IO response) -> Resource
-post = error "TODO"
-
 get :: ContentEncoder response -> IO response -> Resource
 get = error "TODO"
+
+post :: ContentDecoder request -> ContentEncoder response -> (request -> IO response) -> Resource
+post = error "TODO"
 
 temporaryRedirect :: Int -> Text -> Resource
 temporaryRedirect timeout uri = Resource $ \ _ respond -> respond response where
