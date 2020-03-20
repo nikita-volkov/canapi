@@ -130,10 +130,7 @@ directory path = let
   in waiApplication (WaiStatic.staticApp settings)
 
 indexFile :: Text -> FilePath -> Resource
-indexFile contentType path = Resource $ \ request respond ->
-  case Wai.pathInfo request of
-    [] -> respond $ Wai.responseFile HttpTypes.status200 [("Content-Type", Text.encodeUtf8 contentType)] path Nothing
-    _ -> respond $ Response.notFound
+indexFile contentType path = get (asFile contentType) (pure path)
 
 get :: ContentEncoder response -> IO response -> Resource
 get = error "TODO"
