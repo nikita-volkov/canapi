@@ -223,10 +223,10 @@ instance Monoid (ContentEncoder response) where
 instance Contravariant ContentEncoder where
   contramap fn (ContentEncoder map) = ContentEncoder (fmap (. fn) map)
 
-asJson :: (response -> Aeson.Value) -> ContentEncoder response
+asJson :: ContentEncoder Aeson.Value
 asJson = error "TODO"
 
-asBinary :: (response -> CerealPut.Put) -> ContentEncoder response
+asBinary :: ContentEncoder CerealPut.Put
 asBinary = error "TODO"
 
 asFile :: ContentEncoder FilePath
