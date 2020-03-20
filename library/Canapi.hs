@@ -53,13 +53,17 @@ import qualified Data.HashMap.Strict as HashMap
 -------------------------
 
 serve :: Resource -> Word16 -> Bool -> IO Void
-serve (Resource resource) port cors = do
+serve resource port cors = do
   Warp.run (fromIntegral port) (if cors then corsify app else app)
   fail "The server stopped"
   where
-    app request = resource (RequestAccessor.requestMetadata request) request
+    app = toWaiApplication resource
     corsify = WaiCors.cors (const (Just policy)) where
       policy = WaiCors.simpleCorsResourcePolicy { WaiCors.corsRequestHeaders = WaiCors.simpleHeaders }
+
+toWaiApplication :: Resource -> Wai.Application
+toWaiApplication (Resource resource) request =
+  resource (RequestAccessor.requestMetadata request) request
 
 
 -- * Resource
