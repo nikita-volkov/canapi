@@ -104,3 +104,11 @@ import Network.IP.Addr as Exports (IP, NetAddr)
 -- unordered-containers
 -------------------------
 import Data.HashMap.Strict as Exports (HashMap)
+
+-- case-insensitive
+-------------------------
+import Data.CaseInsensitive as Exports (CI)
+
+-- foldl
+-------------------------
+import Control.Foldl as Exports (Fold(..))
