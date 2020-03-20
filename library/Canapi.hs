@@ -211,5 +211,5 @@ asJson = error "TODO"
 asBinary :: ContentEncoder CerealPut.Put
 asBinary = error "TODO"
 
-asFile :: ContentEncoder FilePath
-asFile = error "TODO"
+asFile :: Text -> ContentEncoder FilePath
+asFile contentType = error "TODO"
