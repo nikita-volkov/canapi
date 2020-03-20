@@ -1,7 +1,6 @@
 module Canapi (
     -- * IO
     serve,
-    serveParsingCliArgs,
     -- * Resource
     Resource,
     atSegment,
@@ -15,10 +14,8 @@ module Canapi (
   ) where
 
 import Canapi.Prelude
-import qualified Canapi.Optima.ParamGroup as Optima
 import qualified Canapi.Wai.Response as Response
 import qualified Canapi.NetworkIp as NetworkIp
-import qualified Optima
 import qualified Data.Serialize.Get as CerealGet
 import qualified Data.Serialize.Put as CerealPut
 import qualified Network.Wai as Wai
@@ -38,66 +35,51 @@ import qualified Data.HashMap.Strict as HashMap
 -- * IO
 -------------------------
 
-serve :: Resource env -> Word16 -> Bool -> Provider Text env -> IO Void
-serve (Resource parser) port cors envProvider =
-  runFx $ handleErr (fail . Text.unpack) $ provideAndUse envProvider $ handleEnv $ \ env ->
-  runTotalIO $ do
-    Warp.run (fromIntegral port) $ (if cors then corsApp else id) $ \ request cont ->
-      runFx $ handleErr (fail . Text.unpack) $ provideAndUse (pure env) $ parser request cont
-    fail "The server stopped"
+serve :: Resource -> Word16 -> Bool -> IO Void
+serve (Resource app) port cors = do
+  Warp.run (fromIntegral port) (if cors then corsify app else app)
+  fail "The server stopped"
   where
-    corsApp = WaiCors.cors (const (Just policy))
-      where
-        policy = WaiCors.simpleCorsResourcePolicy { WaiCors.corsRequestHeaders = WaiCors.simpleHeaders }
-
-{-|
-Parse CLI args and produce an exception-free IO-action, which runs a server.
--}
-serveParsingCliArgs :: Resource env -> Text -> Optima.ParamGroup envArgs -> (envArgs -> Provider Text env) -> IO Void
-serveParsingCliArgs api appDesc envParamGroup provider = do
-  (port, cors, envArgs) <- Optima.params appDesc $ Optima.group "" $ Optima.settings envParamGroup
-  serve api port cors (provider envArgs)
+    corsify = WaiCors.cors (const (Just policy)) where
+      policy = WaiCors.simpleCorsResourcePolicy { WaiCors.corsRequestHeaders = WaiCors.simpleHeaders }
 
 
 -- * Resource
 -------------------------
 
-newtype Resource env = Resource (Wai.Request -> (Wai.Response -> IO Wai.ResponseReceived) -> Fx env Text Wai.ResponseReceived)
+newtype Resource = Resource (Wai.Request -> (Wai.Response -> IO Wai.ResponseReceived) -> IO Wai.ResponseReceived)
 
-instance Semigroup (Resource env) where
-  (<>) (Resource a) (Resource b) = Resource $ \ request respond -> handleEnv $ \ env ->
+instance Semigroup Resource where
+  (<>) (Resource a) (Resource b) = Resource $ \ request respond ->
     a request $ \ response1 -> do
       let statusCode1 = HttpTypes.statusCode (Wai.responseStatus response1)
       if statusCode1 >= 400 && statusCode1 < 500
-        then runFx $ handleErr (fail . Text.unpack) $ provideAndUse (pure env) $ b request respond
+        then b request respond
         else respond response1
 
-instance Monoid (Resource env) where
-  mempty = Resource (\ _ respond -> runTotalIO (respond Response.notFound))
+instance Monoid Resource where
+  mempty = Resource (\ _ respond -> respond Response.notFound)
   mappend = (<>)
   mconcat = \ case
     a : [] -> a
     a : b -> a <> mconcat b
     [] -> mempty
 
-instance Contravariant Resource where
-  contramap f (Resource a) = Resource (\ request respond -> mapEnv f (a request respond))
-
-atSegment :: Text -> Resource env -> Resource env
+atSegment :: Text -> Resource -> Resource
 atSegment expectedSegment (Resource nested) = Resource $ \ request respond ->
   case Wai.pathInfo request of
     segmentsHead : segmentsTail -> if expectedSegment == segmentsHead
       then nested (request { Wai.pathInfo = segmentsTail }) respond
-      else runTotalIO (respond Response.notFound)
-    _ -> runTotalIO (respond Response.notFound)
+      else respond Response.notFound
+    _ -> respond Response.notFound
 
-bySegment :: (Text -> Resource env) -> Resource env
+bySegment :: (Text -> Resource) -> Resource
 bySegment = error "TODO"
 
-parsingSegment :: Attoparsec.Parser segment -> (segment -> Resource env) -> Resource env
+parsingSegment :: Attoparsec.Parser segment -> (segment -> Resource) -> Resource
 parsingSegment = error "TODO"
 
-authenticating :: (Text -> Text -> Fx env Text (Maybe identity)) -> (identity -> Resource env) -> Resource env
+authenticating :: (Text -> Text -> IO (Maybe identity)) -> (identity -> Resource) -> Resource
 authenticating = error "TODO"
 
 {-|
@@ -108,12 +90,12 @@ Only supports the @POST@ method.
 binary ::
   CerealGet.Get request ->
   (response -> CerealPut.Put) ->
-  (ClientInfo -> request -> Fx env Text response) ->
-  Resource env
+  (ClientInfo -> request -> IO response) ->
+  Resource
 binary decoder encoder fx = Resource $ \ request respond ->
   if Wai.requestMethod request == HttpTypes.methodPost
     then do
-      requestBody <- runTotalIO $ Wai.strictRequestBody request
+      requestBody <- Wai.strictRequestBody request
       case CerealGet.runGetLazy decoder requestBody of
         Right decodedRequest -> do
           response <- let
@@ -135,11 +117,11 @@ binary decoder encoder fx = Resource $ \ request respond ->
                 HttpTypes.status200
                 []
                 (CerealPut.execPut (encoder response))
-            in runTotalIO (respond waiResponse)
-        Left err -> runTotalIO (respond (Wai.responseLBS HttpTypes.status400 [] (fromString err)))
-    else runTotalIO (respond (Wai.responseLBS HttpTypes.status405 [] ""))
+            in respond waiResponse
+        Left err -> respond (Wai.responseLBS HttpTypes.status400 [] (fromString err))
+    else respond (Wai.responseLBS HttpTypes.status405 [] "")
 
-directory :: FilePath -> Resource env
+directory :: FilePath -> Resource
 directory path = let
   settings =
     (WaiStatic.defaultWebAppSettings path) {
@@ -147,20 +129,20 @@ directory path = let
       }
   in waiApplication (WaiStatic.staticApp settings)
 
-indexFile :: Text -> FilePath -> Resource env
+indexFile :: Text -> FilePath -> Resource
 indexFile contentType path = Resource $ \ request respond ->
   case Wai.pathInfo request of
-    [] -> runTotalIO $ respond $ Wai.responseFile HttpTypes.status200 [("Content-Type", Text.encodeUtf8 contentType)] path Nothing
-    _ -> runTotalIO $ respond $ Response.notFound
+    [] -> respond $ Wai.responseFile HttpTypes.status200 [("Content-Type", Text.encodeUtf8 contentType)] path Nothing
+    _ -> respond $ Response.notFound
 
-post :: ContentDecoder request -> ContentEncoder response -> (request -> Fx env Text response) -> Resource env
+post :: ContentDecoder request -> ContentEncoder response -> (request -> IO response) -> Resource
 post = error "TODO"
 
-get :: ContentEncoder response -> Fx env Text response -> Resource env
+get :: ContentEncoder response -> IO response -> Resource
 get = error "TODO"
 
-temporaryRedirect :: Int -> Text -> Resource env
-temporaryRedirect timeout uri = Resource $ \ _ respond -> runTotalIO (respond response) where
+temporaryRedirect :: Int -> Text -> Resource
+temporaryRedirect timeout uri = Resource $ \ _ respond -> respond response where
   response = Wai.responseBuilder HttpTypes.status307 headers "" where
     headers = [cacheControl, location] where
       cacheControl = ("cache-control", "max-age=" <> fromString (show timeout))
@@ -170,8 +152,8 @@ temporaryRedirect timeout uri = Resource $ \ _ respond -> runTotalIO (respond re
 -- ** Low-level
 -------------------------
 
-waiApplication :: Wai.Application -> Resource env
-waiApplication application = Resource $ \ request respond -> runTotalIO $ application request respond
+waiApplication :: Wai.Application -> Resource
+waiApplication = Resource
 
 
 -- * Metadata
