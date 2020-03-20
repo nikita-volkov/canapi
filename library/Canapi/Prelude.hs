@@ -1,6 +1,9 @@
 module Canapi.Prelude
 ( 
   module Exports,
+  Bs,
+  Lbs,
+  LbsBuilder,
 )
 where
 
@@ -58,6 +61,7 @@ import GHC.Conc as Exports hiding (withMVar, threadWaitWriteSTM, threadWaitWrite
 import GHC.Exts as Exports (lazy, inline, sortWith, groupWith, IsList(..))
 import GHC.Generics as Exports (Generic, Generic1)
 import GHC.IO.Exception as Exports
+import GHC.Records as Exports
 import Numeric as Exports
 import Prelude as Exports hiding (fail, concat, foldr, mapM_, sequence_, foldl1, maximum, minimum, product, sum, all, and, any, concatMap, elem, foldl, foldr1, notElem, or, mapM, sequence, id, (.))
 import System.Environment as Exports
@@ -93,10 +97,6 @@ import Control.Monad.Trans.Reader as Exports (Reader, runReader, mapReader, with
 import Control.Monad.Trans.State.Strict as Exports (State, runState, evalState, execState, mapState, withState, StateT(StateT), runStateT, evalStateT, execStateT, mapStateT, withStateT)
 import Control.Monad.Trans.Writer.Strict as Exports (Writer, runWriter, execWriter, mapWriter, WriterT(..), execWriterT, mapWriterT)
 
--- fx
--------------------------
-import Fx as Exports
-
 -- tuple
 -------------------------
 import Data.Tuple.All as Exports
@@ -104,3 +104,28 @@ import Data.Tuple.All as Exports
 -- network-ip
 -------------------------
 import Network.IP.Addr as Exports (IP, NetAddr)
+
+-- unordered-containers
+-------------------------
+import Data.HashMap.Strict as Exports (HashMap)
+
+-- case-insensitive
+-------------------------
+import Data.CaseInsensitive as Exports (CI)
+
+-- foldl
+-------------------------
+import Control.Foldl as Exports (Fold(..))
+
+-- hashable
+-------------------------
+import Data.Hashable as Exports (Hashable)
+
+
+import qualified Data.ByteString as Bs
+import qualified Data.ByteString.Lazy as Lbs
+import qualified Data.ByteString.Lazy.Builder as LbsBuilder
+
+type Bs = Bs.ByteString
+type Lbs = Lbs.ByteString
+type LbsBuilder = LbsBuilder.Builder
