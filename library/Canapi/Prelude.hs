@@ -1,9 +1,6 @@
 module Canapi.Prelude
 ( 
   module Exports,
-  Bs,
-  Lbs,
-  LbsBuilder,
 )
 where
 
@@ -120,12 +117,3 @@ import Control.Foldl as Exports (Fold(..))
 -- hashable
 -------------------------
 import Data.Hashable as Exports (Hashable)
-
-
-import qualified Data.ByteString as Bs
-import qualified Data.ByteString.Lazy as Lbs
-import qualified Data.ByteString.Lazy.Builder as LbsBuilder
-
-type Bs = Bs.ByteString
-type Lbs = Lbs.ByteString
-type LbsBuilder = LbsBuilder.Builder
