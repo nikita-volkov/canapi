@@ -198,6 +198,10 @@ instance Applicative Receiver where
     e = (liftA2 . liftA2) (<*>) a c
     f = (liftA2 . liftA2 . liftA2) (<*>) b d
 
+instance Alternative Receiver where
+  empty = mempty
+  (<|>) = (<>)
+
 runReceiver :: Receiver request -> Maybe Type -> Maybe (ByteString -> Either Text request)
 runReceiver (Receiver defaultDecoder decoderByType) contentType = case contentType of
   Just contentType -> ByType.get contentType decoderByType
