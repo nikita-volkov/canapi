@@ -25,3 +25,10 @@ temporaryRedirect timeout uri = Wai.responseBuilder HttpTypes.status307 headers 
   headers = [cacheControl, location] where
     cacheControl = ("cache-control", fromString ("max-age=" <> show timeout))
     location = ("location", Text.encodeUtf8 uri)
+
+alternate :: Wai.Response -> Wai.Response -> Wai.Response
+alternate response1 response2 =
+  let statusCode1 = HttpTypes.statusCode (Wai.responseStatus response1)
+    in if statusCode1 >= 400 && statusCode1 < 500
+      then response2
+      else response1
