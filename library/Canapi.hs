@@ -142,8 +142,8 @@ endpoint method receiver responder handler = Resource $ \ requestMetadata reques
       Just decoder -> case runResponder responder (getField @"acceptHeader" requestMetadata) (getField @"contentTypeHeader" requestMetadata) of
         Nothing -> respond Response.notAcceptable
         Just encoder -> do
-          requestBody <- Wai.lazyRequestBody request
-          case decoder requestBody of
+          requestBody <- Wai.strictRequestBody request
+          case decoder (LazyByteString.toStrict requestBody) of
             Left err -> respond (Response.plainBadRequest err)
             Right request -> do
               result <- try @SomeException (handler request)
@@ -179,7 +179,7 @@ waiApplication app = Resource (\ _ -> app)
 {-| Request content parser. -}
 data Receiver request = Receiver (Maybe (Decoder request)) (ByType.ByType (Maybe (Decoder request)))
 
-type Decoder a = Lbs -> Either Text a
+type Decoder a = ByteString -> Either Text a
 
 instance Semigroup (Receiver request) where
   (<>) (Receiver a b) (Receiver c d) = Receiver (a <|> c) (liftA2 (liftA2 unite) b d) where
@@ -197,19 +197,19 @@ instance Applicative Receiver where
     e = (liftA2 . liftA2) (<*>) a c
     f = (liftA2 . liftA2 . liftA2) (<*>) b d
 
-runReceiver :: Receiver request -> Maybe Type -> Maybe (Lbs -> Either Text request)
+runReceiver :: Receiver request -> Maybe Type -> Maybe (ByteString -> Either Text request)
 runReceiver (Receiver defaultDecoder decoderByType) contentType = case contentType of
   Just contentType -> ByType.get contentType decoderByType
   Nothing -> defaultDecoder
 
 ofJson :: (Aeson.Value -> Either Text request) -> Receiver request
 ofJson aesonParser = Receiver (Just decoder) (ByType.justJson decoder) where
-  decoder = first fromString . Aeson.eitherDecode' >=> aesonParser
+  decoder = first fromString . Aeson.eitherDecodeStrict' >=> aesonParser
 
 ofYaml :: (Aeson.Value -> Either Text request) -> Receiver request
 ofYaml aesonParser = Receiver (Just decoder) (ByType.justYaml decoder) where
   decoder input = do
-    ast <- left (fromString . Yaml.prettyPrintParseException) (Yaml.decodeEither' (LazyByteString.toStrict input))
+    ast <- left (fromString . Yaml.prettyPrintParseException) (Yaml.decodeEither' input)
     aesonParser ast
 
 ofBinary :: CerealGet.Get request -> Receiver request
