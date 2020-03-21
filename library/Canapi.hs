@@ -112,10 +112,10 @@ parsingSegment parser cont = Resource $ \ requestMetadata request respond ->
 authenticating :: (Text -> Text -> IO (Maybe identity)) -> (identity -> Resource) -> Resource
 authenticating = error "TODO"
 
-get :: Responder response -> IO response -> Resource
+get :: Responder response -> IO (Either Text response) -> Resource
 get responder handler = endpoint HttpTypes.methodGet (pure ()) responder (const handler)
 
-post :: Receiver request -> Responder response -> (request -> IO response) -> Resource
+post :: Receiver request -> Responder response -> (request -> IO (Either Text response)) -> Resource
 post = endpoint HttpTypes.methodPost
 
 {-|
@@ -125,16 +125,16 @@ Immediately produces a response with the 202 status code.
 
 https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/202
 -}
-postAsync :: Receiver request -> (request -> IO ()) -> Resource
+postAsync :: Receiver request -> (request -> IO (Either Text ())) -> Resource
 postAsync = error "TODO"
 
-put :: Receiver request -> Responder response -> (request -> IO response) -> Resource
+put :: Receiver request -> Responder response -> (request -> IO (Either Text response)) -> Resource
 put = endpoint HttpTypes.methodPut
 
-delete :: Receiver request -> Responder response -> (request -> IO response) -> Resource
+delete :: Receiver request -> Responder response -> (request -> IO (Either Text response)) -> Resource
 delete = endpoint HttpTypes.methodDelete
 
-endpoint :: HttpTypes.Method -> Receiver request -> Responder response -> (request -> IO response) -> Resource
+endpoint :: HttpTypes.Method -> Receiver request -> Responder response -> (request -> IO (Either Text response)) -> Resource
 endpoint method receiver responder handler = Resource $ \ requestMetadata request respond ->
   if Wai.requestMethod request /= method
     then respond Response.methodNotAllowed
@@ -149,10 +149,14 @@ endpoint method receiver responder handler = Resource $ \ requestMetadata reques
             Right request -> do
               result <- try @SomeException (handler request)
               case result of
-                Right result -> respond (encoder result)
-                Left exc -> do
-                  hPutStrLn stderr (show exc)
-                  respond Response.internalServerError
+                Right result -> case result of
+                  Right result -> respond (encoder result)
+                  Left handlerErr -> respond (Response.plainBadRequest handlerErr)
+                Left exc -> case fromException exc of
+                  Just (SomeAsyncException asyncExc) -> throw asyncExc
+                  Nothing -> do
+                    hPutStrLn stderr (show exc)
+                    respond Response.internalServerError
 
 temporaryRedirect :: Int -> Text -> Resource
 temporaryRedirect timeout uri = Resource $ \ _ _ respond ->
