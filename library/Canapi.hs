@@ -17,6 +17,7 @@ module Canapi (
     Receiver,
     ofJson,
     ofYaml,
+    ofAny,
     -- * Responder
     Responder,
     asJson,
@@ -211,6 +212,14 @@ ofYaml aesonParser = Receiver (Just decoder) (ByType.justYaml decoder) where
   decoder input = do
     ast <- left (fromString . Yaml.prettyPrintParseException) (Yaml.decodeEither' input)
     aesonParser ast
+
+{-|
+Bytes of any content type. 
+
+Can be used to get the source bytes of another receiver when applicatively composed with it.
+-}
+ofAny :: Receiver ByteString
+ofAny = Receiver (Just Right) (pure (Just Right))
 
 ofBinary :: CerealGet.Get request -> Receiver request
 ofBinary = error "TODO"
