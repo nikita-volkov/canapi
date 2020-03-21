@@ -29,9 +29,6 @@ get = \ case
   YamlType -> yaml
   BinaryType -> binary
 
-justJsonAndYaml :: a -> ByType (Maybe a)
-justJsonAndYaml a = ByType Nothing Nothing Nothing (Just a) (Just a) Nothing
-
 justJson :: a -> ByType (Maybe a)
 justJson a = ByType Nothing Nothing Nothing (Just a) Nothing Nothing
 
