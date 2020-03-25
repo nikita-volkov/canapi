@@ -25,6 +25,10 @@ temporaryRedirect timeout uri = Wai.responseBuilder HttpTypes.status307 headers 
   headers = [cacheControl, location] where
     cacheControl = ("cache-control", fromString ("max-age=" <> show timeout))
     location = ("location", Text.encodeUtf8 uri)
+unauthorized realm = Wai.responseBuilder HttpTypes.status401 headers mempty where
+  headers = [
+      ("WWW-Authenticate", "Basic realm=\"" <> realm <> "\"")
+    ]
 
 alternate :: Wai.Response -> Wai.Response -> Wai.Response
 alternate response1 response2 =

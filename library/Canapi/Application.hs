@@ -7,6 +7,7 @@ import qualified Network.Wai.Middleware.Cors as WaiCors
 import qualified Network.HTTP.Types as HttpTypes
 import qualified Canapi.Response as Response
 import qualified Data.Attoparsec.Text as Attoparsec
+import qualified Canapi.HttpAuthorizationParsing as HttpAuthorizationParsing
 
 
 concat :: [Application] -> Application
@@ -42,3 +43,10 @@ refineSegment refiner request = case pathInfo request of
       Right cont -> cont (request { pathInfo = segmentsTail })
       Left err -> apply err
   _ -> apply Response.notFound
+
+authorizing :: ByteString -> (Text -> Text -> Application) -> Application
+authorizing realm cont request = case requestHeaders request & lookup "authorization" of
+  Just bytes -> case HttpAuthorizationParsing.basicCredentials bytes of
+    Right (username, password) -> cont username password request
+    Left err -> apply (Response.plainBadRequest err)
+  Nothing -> apply (Response.unauthorized realm)

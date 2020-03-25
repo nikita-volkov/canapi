@@ -32,7 +32,7 @@ import qualified Fx
 data Resource env params =
   AtResource Text [Resource env params] |
   forall segment. ByResource [SegmentParser segment] [Resource env (segment, params)] |
-  forall identity. AuthenticatedResource (Text -> Text -> Fx env Err (Maybe identity)) [Resource env (identity, params)] |
+  forall identity. AuthenticatedResource Realm (Text -> Text -> Fx env Err (Maybe identity)) [Resource env (identity, params)] |
   forall request response. HandlerResource HttpTypes.Method [Receiver request] [Responder response] (params -> request -> Fx env Err response) |
   RedirectResource Int Text |
   FileSystemResource FilePath
@@ -46,6 +46,8 @@ data SegmentParser a = SegmentParser Text (Attoparsec.Parser a)
 data Err =
   ClientErr Text |
   ServerErr Text
+
+newtype Realm = Realm ByteString
 
 
 -- * Execution
@@ -69,6 +71,20 @@ buildWaiApplication env params = Application.concat . fmap fromResource where
       in
         Application.attoparseSegment parser $ \ segment ->
         buildWaiApplication env (segment, params) subResourceList
+    AuthenticatedResource (Realm realm) handler subResourceList ->
+      Application.authorizing realm $ \ username password request respond ->
+      Fx.runFxHandling
+        (\ case
+          ServerErr err -> do
+            Text.hPutStrLn stderr err
+            respond Response.internalServerError
+          ClientErr err -> respond (Response.plainBadRequest err))
+        (Fx.provideAndUse (pure env) (do
+            authentication <- handler username password
+            case authentication of
+              Just identity -> Fx.runTotalIO (const (buildWaiApplication env (identity, params) subResourceList request respond))
+              Nothing -> Fx.runTotalIO (const (respond (Response.unauthorized realm)))
+          ))
     HandlerResource method receiverList responderList handler -> \ request -> let
       headers = Wai.requestHeaders request
       (acceptHeader, contentTypeHeader) = headers & Foldl.fold ((,) <$> Foldl.lookup "accept" <*> Foldl.lookup "content-type")
@@ -139,6 +155,9 @@ put = HandlerResource "put"
 delete :: [Responder response] -> (params -> Fx env Err response) -> Resource env params
 delete responder handler = HandlerResource "delete" [] responder (\ params () -> handler params)
 
+authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> [Resource env (identity, params)] -> Resource env params
+authenticated = AuthenticatedResource
+
 
 -- * Instances
 -------------------------
@@ -155,3 +174,8 @@ instance Applicative Receiver where
 
 instance Contravariant Responder where
   contramap mapper (Responder mediaType response) = Responder mediaType (response . mapper)
+
+instance IsString Realm where
+  fromString string = if all (\ a -> isAscii a && isPrint a && a /= '"') string
+    then Realm (fromString string)
+    else error "Not a valid realm"

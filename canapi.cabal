@@ -25,6 +25,7 @@ library
     Canapi.ByType
     Canapi.Data
     Canapi.HeaderParsing
+    Canapi.HttpAuthorizationParsing
     Canapi.MimeTypeList
     Canapi.NetworkIp
     Canapi.Prelude
@@ -38,6 +39,7 @@ library
     attoparsec >=0.13.2.3 && <0.14,
     attoparsec-data >=1.0.4.1 && <1.1,
     base >=4.10 && <5,
+    base64-bytestring ==1.*,
     bytestring >=0.10.8 && <0.11,
     case-insensitive >=1.2.1 && <2,
     cereal >=0.5.8.1 && <0.6,
