@@ -92,6 +92,7 @@ buildWaiApplication env params = Application.concat . fmap fromResource where
                     (Fx.provideAndUse (pure env) (do
                       response <- handler params request
                       Fx.runTotalIO (const (respond (encoder response)))))
+    _ -> error "TODO"
 
 runReceiverList :: [Receiver request] -> Maybe ByteString -> Maybe (ByteString -> Either Text request)
 runReceiverList receiverList = \ case
