@@ -62,13 +62,13 @@ serve resourceList port cors =
 buildWaiApplication :: env -> params -> [Resource env params] -> Wai.Application
 buildWaiApplication env params = Application.concat . fmap fromResource where
   fromResource = \ case
-    AtResource segment subResourceList -> let
-      subApp = subResourceList & buildWaiApplication env params
-      in \ request -> case Wai.pathInfo request of
-        segmentsHead : segmentsTail -> if segment == segmentsHead
-          then subApp (request { Wai.pathInfo = segmentsTail })
-          else apply Response.notFound
-        _ -> apply Response.notFound
+    AtResource segment subResourceList ->
+      Application.matchSegment segment (buildWaiApplication env params subResourceList)
+    ByResource segmentParserList subResourceList -> let
+      parser = segmentParserList & fmap (\ (SegmentParser _ p) -> p) & asum
+      in
+        Application.attoparseSegment parser $ \ segment ->
+        buildWaiApplication env (segment, params) subResourceList
     EndpointResource method receiverList responderList handler -> \ request -> let
       headers = Wai.requestHeaders request
       (acceptHeader, contentTypeHeader) = headers & Foldl.fold ((,) <$> Foldl.lookup "accept" <*> Foldl.lookup "content-type")
