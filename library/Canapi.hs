@@ -33,7 +33,7 @@ data Resource env params =
   AtResource Text [Resource env params] |
   forall segment. ByResource [SegmentParser segment] [Resource env (segment, params)] |
   forall identity. AuthenticatedResource (Text -> Text -> Fx env Err (Maybe identity)) [Resource env (identity, params)] |
-  forall request response. EndpointResource HttpTypes.Method [Receiver request] [Responder response] (params -> request -> Fx env Err response) |
+  forall request response. HandlerResource HttpTypes.Method [Receiver request] [Responder response] (params -> request -> Fx env Err response) |
   RedirectResource Int Text |
   FileSystemResource FilePath
 
@@ -69,7 +69,7 @@ buildWaiApplication env params = Application.concat . fmap fromResource where
       in
         Application.attoparseSegment parser $ \ segment ->
         buildWaiApplication env (segment, params) subResourceList
-    EndpointResource method receiverList responderList handler -> \ request -> let
+    HandlerResource method receiverList responderList handler -> \ request -> let
       headers = Wai.requestHeaders request
       (acceptHeader, contentTypeHeader) = headers & Foldl.fold ((,) <$> Foldl.lookup "accept" <*> Foldl.lookup "content-type")
       in if Wai.requestMethod request /= method
@@ -125,19 +125,19 @@ by :: [SegmentParser segment] -> [Resource env (segment, params)] -> Resource en
 by = ByResource
 
 head :: (params -> Fx env Err ()) -> Resource env params
-head handler = EndpointResource "head" [] [] (\ params () -> handler params)
+head handler = HandlerResource "head" [] [] (\ params () -> handler params)
 
 get :: [Responder response] -> (params -> Fx env Err response) -> Resource env params
-get responder handler = EndpointResource "get" [] responder (\ params () -> handler params)
+get responder handler = HandlerResource "get" [] responder (\ params () -> handler params)
 
 post :: [Receiver request] -> [Responder response] -> (params -> request -> Fx env Err response) -> Resource env params
-post = EndpointResource "post"
+post = HandlerResource "post"
 
 put :: [Receiver request] -> [Responder response] -> (params -> request -> Fx env Err response) -> Resource env params
-put = EndpointResource "put"
+put = HandlerResource "put"
 
 delete :: [Responder response] -> (params -> Fx env Err response) -> Resource env params
-delete responder handler = EndpointResource "delete" [] responder (\ params () -> handler params)
+delete responder handler = HandlerResource "delete" [] responder (\ params () -> handler params)
 
 
 -- * Instances
