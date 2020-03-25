@@ -1,31 +1,8 @@
-module Canapi (
-    -- * IO
-    serve,
-    -- * Resource
-    Resource,
-    atSegment,
-    bySegment,
-    parsingSegment,
-    get,
-    post,
-    put,
-    delete,
-    temporaryRedirect,
-    directory,
-    waiApplication,
-    -- * Receiver
-    Receiver,
-    ofJson,
-    ofYaml,
-    ofAny,
-    -- * Responder
-    Responder,
-    asJson,
-    asYaml,
-  ) where
+module Canapi where
 
-import Canapi.Prelude hiding (delete)
+import Canapi.Prelude hiding (delete, get, put, head)
 import Canapi.Data
+import qualified Canapi.Application as Application
 import qualified Canapi.RequestAccessor as RequestAccessor
 import qualified Canapi.ByType as ByType
 import qualified Canapi.Response as Response
@@ -36,187 +13,166 @@ import qualified Network.Wai as Wai
 import qualified Network.Wai.Internal as Wai
 import qualified Network.Wai.Application.Static as WaiStatic
 import qualified WaiAppStatic.Types as WaiStatic
-import qualified Network.Wai.Middleware.Cors as WaiCors
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.HTTP.Types as HttpTypes
 import qualified Network.HTTP.Media as HttpMedia
 import qualified Attoparsec.Data as AttoparsecData
 import qualified Data.ByteString.Lazy as LazyByteString
 import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Attoparsec.Text as Attoparsec
 import qualified Data.Aeson as Aeson
 import qualified Data.Yaml as Yaml
 import qualified Data.HashMap.Strict as HashMap
+import qualified Control.Foldl as Foldl
+import qualified Fx
 
 
--- * IO
+data Resource env params =
+  AtResource Text [Resource env params] |
+  forall segment. ByResource [SegmentParser segment] [Resource env (segment, params)] |
+  forall identity. AuthenticatedResource Realm (Text -> Text -> Fx env Err (Maybe identity)) [Resource env (identity, params)] |
+  forall request response. HandlerResource HttpTypes.Method [Receiver request] [Responder response] (params -> request -> Fx env Err response) |
+  RedirectResource Int (params -> Either Text Text) |
+  FileSystemResource FilePath
+
+data Receiver a = Receiver [HttpMedia.MediaType] (ByteString -> Either Text a)
+
+data Responder a = Responder [HttpMedia.MediaType] (a -> Wai.Response)
+
+data SegmentParser a = SegmentParser Text (Attoparsec.Parser a)
+
+data Err =
+  ClientErr Text |
+  ServerErr Text
+
+newtype Realm = Realm ByteString
+
+
+-- * Execution
 -------------------------
 
-serve :: Resource -> Word16 -> Bool -> IO Void
-serve resource port cors = do
-  Warp.run (fromIntegral port) (if cors then corsify app else app)
-  fail "The server stopped"
+serve :: [Resource env ()] -> Word16 -> Bool -> Fx env err Void
+serve resourceList port cors =
+  Fx.runTotalIO $ \ env -> do
+    Warp.run (fromIntegral port) (corsify (buildWaiApplication env () resourceList))
+    fail "Warp unexpectedly stopped"
   where
-    app = toWaiApplication resource
-    corsify = WaiCors.cors (const (Just policy)) where
-      policy = WaiCors.simpleCorsResourcePolicy { WaiCors.corsRequestHeaders = WaiCors.simpleHeaders }
+    corsify = if cors then Application.corsify else id
 
-toWaiApplication :: Resource -> Wai.Application
-toWaiApplication (Resource resource) request =
-  resource (RequestAccessor.requestMetadata request) request
+buildWaiApplication :: env -> params -> [Resource env params] -> Wai.Application
+buildWaiApplication env params = Application.concat . fmap fromResource where
+  fromResource = \ case
+    AtResource segment subResourceList ->
+      Application.matchSegment segment (buildWaiApplication env params subResourceList)
+    ByResource segmentParserList subResourceList -> let
+      parser = segmentParserList & fmap (\ (SegmentParser _ p) -> p) & asum
+      in
+        Application.attoparseSegment parser $ \ segment ->
+        buildWaiApplication env (segment, params) subResourceList
+    AuthenticatedResource (Realm realm) handler subResourceList ->
+      Application.authorizing realm $ \ username password request respond ->
+      Fx.runFxHandling
+        (\ case
+          ServerErr err -> do
+            Text.hPutStrLn stderr err
+            respond Response.internalServerError
+          ClientErr err -> respond (Response.plainBadRequest err))
+        (Fx.provideAndUse (pure env) (do
+            authentication <- handler username password
+            case authentication of
+              Just identity -> Fx.runTotalIO (const (buildWaiApplication env (identity, params) subResourceList request respond))
+              Nothing -> Fx.runTotalIO (const (respond (Response.unauthorized realm)))
+          ))
+    HandlerResource method receiverList responderList handler -> \ request -> let
+      headers = Wai.requestHeaders request
+      (acceptHeader, contentTypeHeader) = headers & Foldl.fold ((,) <$> Foldl.lookup "accept" <*> Foldl.lookup "content-type")
+      in if Wai.requestMethod request /= method
+        then apply Response.methodNotAllowed
+        else case runReceiverList receiverList contentTypeHeader of
+          Nothing -> apply Response.unsupportedMediaType
+          Just decoder -> case runResponderList responderList acceptHeader contentTypeHeader of
+            Nothing -> apply Response.notAcceptable
+            Just encoder -> \ respond -> do
+              requestBody <- Wai.strictRequestBody request
+              case decoder (LazyByteString.toStrict requestBody) of
+                Left err -> respond (Response.plainBadRequest err)
+                Right request ->
+                  Fx.runFxHandling
+                    (\ case
+                      ServerErr err -> do
+                        Text.hPutStrLn stderr err
+                        respond Response.internalServerError
+                      ClientErr err -> respond (Response.plainBadRequest err))
+                    (Fx.provideAndUse (pure env) (do
+                      response <- handler params request
+                      Fx.runTotalIO (const (respond (encoder response)))))
+    RedirectResource timeout buildUri -> const $ apply $ case buildUri params of
+      Right uri -> Response.temporaryRedirect timeout uri
+      Left err -> Response.plainBadRequest err
+    _ -> error "TODO"
+
+runReceiverList :: [Receiver request] -> Maybe ByteString -> Maybe (ByteString -> Either Text request)
+runReceiverList receiverList = \ case
+  Just contentType -> HttpMedia.mapContentMedia mediaAssocList contentType
+  Nothing -> case receiverList of
+    Receiver _ refiner : _ -> Just refiner
+    _ -> Nothing
+  where
+    mediaAssocList = receiverList & fmap (\ (Receiver a b) -> fmap (,b) a) & join
+
+runResponderList :: [Responder response] -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
+runResponderList responderList acceptHeader contentTypeHeader =
+  byAccept <|> byContentType <|> byHead
+  where
+    byAccept = acceptHeader >>= HttpMedia.mapAcceptMedia mediaAssocList
+    byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia mediaAssocList
+    byHead = case mediaAssocList of
+      (_, a) : _ -> Just a
+      _ -> Nothing
+    mediaAssocList = responderList & fmap (\ (Responder a b) -> fmap (,b) a) & join
 
 
--- * Resource
+-- * DSL
 -------------------------
 
-newtype Resource = Resource (RequestMetadata -> Wai.Request -> (Wai.Response -> IO Wai.ResponseReceived) -> IO Wai.ResponseReceived)
+at :: Text -> [Resource env params] -> Resource env params
+at = AtResource
 
-instance Semigroup Resource where
-  (<>) (Resource a) (Resource b) = Resource $ \ requestMetadata request respond ->
-    a requestMetadata request $ \ response1 -> do
-      let statusCode1 = HttpTypes.statusCode (Wai.responseStatus response1)
-      if statusCode1 >= 400 && statusCode1 < 500
-        then b requestMetadata request respond
-        else respond response1
+by :: [SegmentParser segment] -> [Resource env (segment, params)] -> Resource env params
+by = ByResource
 
-instance Monoid Resource where
-  mempty = Resource (\ _ _ respond -> respond Response.notFound)
-  mappend = (<>)
-  mconcat = \ case
-    a : [] -> a
-    a : b -> a <> mconcat b
-    [] -> mempty
+head :: (params -> Fx env Err ()) -> Resource env params
+head handler = HandlerResource "head" [] [] (\ params () -> handler params)
 
-atSegment :: Text -> Resource -> Resource
-atSegment expectedSegment (Resource nested) = Resource $ \ requestMetadata request respond ->
-  case Wai.pathInfo request of
-    segmentsHead : segmentsTail -> if expectedSegment == segmentsHead
-      then nested requestMetadata (request { Wai.pathInfo = segmentsTail }) respond
-      else respond Response.notFound
-    _ -> respond Response.notFound
+get :: [Responder response] -> (params -> Fx env Err response) -> Resource env params
+get responder handler = HandlerResource "get" [] responder (\ params () -> handler params)
 
-bySegment :: AttoparsecData.LenientParser segment => (segment -> Resource) -> Resource
-bySegment = parsingSegment AttoparsecData.lenientParser
+post :: [Receiver request] -> [Responder response] -> (params -> request -> Fx env Err response) -> Resource env params
+post = HandlerResource "post"
 
-parsingSegment :: Attoparsec.Parser segment -> (segment -> Resource) -> Resource
-parsingSegment parser cont = Resource $ \ requestMetadata request respond ->
-  case Wai.pathInfo request of
-    segmentsHead : segmentsTail ->
-      case Attoparsec.parseOnly (parser <* Attoparsec.endOfInput) segmentsHead of
-        Right segment -> case cont segment of
-          Resource nested -> nested requestMetadata (request { Wai.pathInfo = segmentsTail }) respond
-        Left err -> respond (Response.plainBadRequest (fromString err))
-    _ -> respond Response.notFound
+put :: [Receiver request] -> [Responder response] -> (params -> request -> Fx env Err response) -> Resource env params
+put = HandlerResource "put"
 
-authenticating :: (Text -> Text -> IO (Maybe identity)) -> (identity -> Resource) -> Resource
-authenticating = error "TODO"
+delete :: [Responder response] -> (params -> Fx env Err response) -> Resource env params
+delete responder handler = HandlerResource "delete" [] responder (\ params () -> handler params)
 
-get :: Responder response -> IO (Either Text response) -> Resource
-get responder handler = endpoint HttpTypes.methodGet (pure ()) responder (const handler)
+authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> [Resource env (identity, params)] -> Resource env params
+authenticated = AuthenticatedResource
 
-post :: Receiver request -> Responder response -> (request -> IO (Either Text response)) -> Resource
-post = endpoint HttpTypes.methodPost
+temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource env params
+temporaryRedirect = RedirectResource
 
-{-|
-Post without producing a result or waiting for it.
-
-Immediately produces a response with the 202 status code.
-
-https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/202
--}
-postAsync :: Receiver request -> (request -> IO (Either Text ())) -> Resource
-postAsync = error "TODO"
-
-put :: Receiver request -> Responder response -> (request -> IO (Either Text response)) -> Resource
-put = endpoint HttpTypes.methodPut
-
-delete :: Receiver request -> Responder response -> (request -> IO (Either Text response)) -> Resource
-delete = endpoint HttpTypes.methodDelete
-
-endpoint :: HttpTypes.Method -> Receiver request -> Responder response -> (request -> IO (Either Text response)) -> Resource
-endpoint method receiver responder handler = Resource $ \ requestMetadata request respond ->
-  if Wai.requestMethod request /= method
-    then respond Response.methodNotAllowed
-    else case runReceiver receiver (getField @"contentType" requestMetadata) of
-      Nothing -> respond Response.unsupportedMediaType
-      Just decoder -> case runResponder responder (getField @"acceptHeader" requestMetadata) (getField @"contentTypeHeader" requestMetadata) of
-        Nothing -> respond Response.notAcceptable
-        Just encoder -> do
-          requestBody <- Wai.strictRequestBody request
-          case decoder (LazyByteString.toStrict requestBody) of
-            Left err -> respond (Response.plainBadRequest err)
-            Right request -> do
-              result <- try @SomeException (handler request)
-              case result of
-                Right result -> case result of
-                  Right result -> respond (encoder result)
-                  Left handlerErr -> respond (Response.plainBadRequest handlerErr)
-                Left exc -> case fromException exc of
-                  Just (SomeAsyncException asyncExc) -> throw asyncExc
-                  Nothing -> do
-                    hPutStrLn stderr (show exc)
-                    respond Response.internalServerError
-
-temporaryRedirect :: Int -> Text -> Resource
-temporaryRedirect timeout uri = Resource $ \ _ _ respond ->
-  respond (Response.temporaryRedirect timeout uri)
-
-directory :: FilePath -> Resource
-directory path = let
-  settings =
-    (WaiStatic.defaultWebAppSettings path) {
-        WaiStatic.ssMaxAge = WaiStatic.NoMaxAge
-      }
-  in waiApplication (WaiStatic.staticApp settings)
-
-
--- ** Low-level
+-- ** Receiver
 -------------------------
-
-waiApplication :: Wai.Application -> Resource
-waiApplication app = Resource (\ _ -> app)
-
-
--- * Receiver
--------------------------
-
-{-| Request content parser. -}
-data Receiver request = Receiver (Maybe (Decoder request)) (ByType.ByType (Maybe (Decoder request)))
-
-type Decoder a = ByteString -> Either Text a
-
-instance Semigroup (Receiver request) where
-  (<>) (Receiver a b) (Receiver c d) = Receiver (a <|> c) (liftA2 (liftA2 unite) b d) where
-    unite a b input = a input & either (const (b input)) Right
-
-instance Monoid (Receiver request) where
-  mempty = Receiver Nothing (pure mempty)
-  mappend = (<>)
-
-deriving instance Functor Receiver
-
-instance Applicative Receiver where
-  pure a = Receiver (Just (const (Right a))) (pure mempty)
-  (<*>) (Receiver a b) (Receiver c d) = Receiver e f where
-    e = (liftA2 . liftA2) (<*>) a c
-    f = (liftA2 . liftA2 . liftA2) (<*>) b d
-
-instance Alternative Receiver where
-  empty = mempty
-  (<|>) = (<>)
-
-runReceiver :: Receiver request -> Maybe Type -> Maybe (ByteString -> Either Text request)
-runReceiver (Receiver defaultDecoder decoderByType) contentType = case contentType of
-  Just contentType -> ByType.get contentType decoderByType
-  Nothing -> defaultDecoder
 
 ofJson :: (Aeson.Value -> Either Text request) -> Receiver request
-ofJson aesonParser = Receiver (Just decoder) (ByType.justJson decoder) where
+ofJson aesonParser = Receiver MimeTypeList.json decoder where
   decoder = first fromString . Aeson.eitherDecodeStrict' >=> aesonParser
 
 ofYaml :: (Aeson.Value -> Either Text request) -> Receiver request
-ofYaml aesonParser = Receiver (Just decoder) (ByType.justYaml decoder) where
+ofYaml aesonParser = Receiver MimeTypeList.yaml decoder where
   decoder input = do
     ast <- left (fromString . Yaml.prettyPrintParseException) (Yaml.decodeEither' input)
     aesonParser ast
@@ -227,48 +183,40 @@ Bytes of any content type.
 Can be used to get the source bytes of another receiver when applicatively composed with it.
 -}
 ofAny :: Receiver ByteString
-ofAny = Receiver (Just Right) (pure (Just Right))
+ofAny = Receiver [] Right
 
-ofBinary :: CerealGet.Get request -> Receiver request
-ofBinary = error "TODO"
-
-
--- * Responder
+-- ** Responder
 -------------------------
 
-{-| Response content renderer. -}
-newtype Responder response = Responder ([(HttpMedia.MediaType, response -> Wai.Response)])
-
-instance Semigroup (Responder response) where
-  (<>) (Responder a) (Responder b) = Responder (a <> b)
-
-instance Monoid (Responder response) where
-  mempty = Responder mempty
-  mappend = (<>)
-
-instance Contravariant Responder where
-  contramap fn (Responder map) = Responder (fmap (second (. fn)) map)
-
-runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
-runResponder (Responder spec) acceptHeader contentTypeHeader =
-  byAccept <|> byContentType <|> byHead
-  where
-    byAccept = acceptHeader >>= HttpMedia.mapAcceptMedia spec
-    byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia spec
-    byHead = case spec of
-      (_, a) : _ -> Just a
-      _ -> Nothing
-
 asJson :: Responder Aeson.Value
-asJson = Responder (MimeTypeList.json & fmap fromString & fmap (,responseFn)) where
+asJson = Responder MimeTypeList.json responseFn where
   responseFn response = Response.ok "application/json" (Aeson.fromEncoding (Aeson.toEncoding response))
 
 asYaml :: Responder Aeson.Value
-asYaml = Responder (MimeTypeList.yaml & fmap fromString & fmap (,responseFn)) where
+asYaml = Responder MimeTypeList.yaml responseFn where
   responseFn response = Response.ok "application/yaml" (Aeson.fromEncoding (Aeson.toEncoding response))
-
-asBinary :: Responder CerealPut.Put
-asBinary = error "TODO"
 
 asFile :: Text -> Responder FilePath
 asFile contentType = error "TODO"
+
+
+-- * Instances
+-------------------------
+
+instance Functor SegmentParser where
+  fmap mapper (SegmentParser description parser) = SegmentParser description (fmap mapper parser)
+
+instance Functor Receiver where
+  fmap = error "TODO"
+
+instance Applicative Receiver where
+  pure = error "TODO"
+  (<*>) = error "TODO"
+
+instance Contravariant Responder where
+  contramap mapper (Responder mediaType response) = Responder mediaType (response . mapper)
+
+instance IsString Realm where
+  fromString string = if all (\ a -> isAscii a && isPrint a && a /= '"') string
+    then Realm (fromString string)
+    else error "Not a valid realm"
