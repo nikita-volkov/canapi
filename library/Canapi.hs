@@ -30,7 +30,7 @@ import qualified Data.HashMap.Strict as HashMap
 data Resource env segments =
   AtResource Text [Resource env segments] |
   forall segment. ByResource [SegmentParser segment] [Resource env (segment, segments)] |
-  forall request response. EndpointResource Text (Receiver request) (Responder response) (segments -> request -> Fx env Err response)
+  forall request response. EndpointResource Text [Receiver request] [Responder response] (segments -> request -> Fx env Err response)
 
 data Receiver a
 
@@ -49,19 +49,19 @@ by :: [SegmentParser segment] -> [Resource env (segment, segments)] -> Resource 
 by = ByResource
 
 head :: (segments -> Fx env Err ()) -> Resource env segments
-head handler = EndpointResource "head" (pure ()) mempty (\ segments () -> handler segments)
+head handler = EndpointResource "head" [] [] (\ segments () -> handler segments)
 
-get :: Responder response -> (segments -> Fx env Err response) -> Resource env segments
-get responder handler = EndpointResource "get" (pure ()) responder (\ segments () -> handler segments)
+get :: [Responder response] -> (segments -> Fx env Err response) -> Resource env segments
+get responder handler = EndpointResource "get" [] responder (\ segments () -> handler segments)
 
-post :: Receiver request -> Responder response -> (segments -> request -> Fx env Err response) -> Resource env segments
+post :: [Receiver request] -> [Responder response] -> (segments -> request -> Fx env Err response) -> Resource env segments
 post = EndpointResource "post"
 
-put :: Receiver request -> Responder response -> (segments -> request -> Fx env Err response) -> Resource env segments
+put :: [Receiver request] -> [Responder response] -> (segments -> request -> Fx env Err response) -> Resource env segments
 put = EndpointResource "put"
 
-delete :: Responder response -> (segments -> Fx env Err response) -> Resource env segments
-delete responder handler = EndpointResource "delete" (pure ()) responder (\ segments () -> handler segments)
+delete :: [Responder response] -> (segments -> Fx env Err response) -> Resource env segments
+delete responder handler = EndpointResource "delete" [] responder (\ segments () -> handler segments)
 
 instance Functor Receiver where
   fmap = error "TODO"
@@ -102,12 +102,12 @@ root = [
     at "rpc" [
       by [nameParser] [
         by [nameParser] [
-          put validatedRpcSchemaSourceReceiver conquer (uncurryH putRpcSchemaHandler),
+          put [validatedRpcSchemaSourceReceiver] [] (uncurryH putRpcSchemaHandler),
           get (error "TODO") (error "TODO"),
           at "artifacts" [
             get (error "TODO") (error "TODO"),
             by [languageParser] [
-              get artifactsResponder (uncurryH getLanguageArtifacts)
+              get [artifactsResponder] (uncurryH getLanguageArtifacts)
             ]
           ]
         ]
