@@ -34,7 +34,7 @@ data Resource env params =
   forall segment. ByResource [SegmentParser segment] [Resource env (segment, params)] |
   forall identity. AuthenticatedResource Realm (Text -> Text -> Fx env Err (Maybe identity)) [Resource env (identity, params)] |
   forall request response. HandlerResource HttpTypes.Method [Receiver request] [Responder response] (params -> request -> Fx env Err response) |
-  RedirectResource Int Text |
+  RedirectResource Int (params -> Either Text Text) |
   FileSystemResource FilePath
 
 data Receiver a = Receiver HttpMedia.MediaType (ByteString -> Either Text a)
@@ -108,6 +108,9 @@ buildWaiApplication env params = Application.concat . fmap fromResource where
                     (Fx.provideAndUse (pure env) (do
                       response <- handler params request
                       Fx.runTotalIO (const (respond (encoder response)))))
+    RedirectResource timeout buildUri -> const $ apply $ case buildUri params of
+      Right uri -> Response.temporaryRedirect timeout uri
+      Left err -> Response.plainBadRequest err
     _ -> error "TODO"
 
 runReceiverList :: [Receiver request] -> Maybe ByteString -> Maybe (ByteString -> Either Text request)
@@ -157,6 +160,9 @@ delete responder handler = HandlerResource "delete" [] responder (\ params () ->
 
 authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> [Resource env (identity, params)] -> Resource env params
 authenticated = AuthenticatedResource
+
+temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource env params
+temporaryRedirect = RedirectResource
 
 
 -- * Instances
