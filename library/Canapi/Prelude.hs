@@ -117,3 +117,11 @@ import Control.Foldl as Exports (Fold(..))
 -- hashable
 -------------------------
 import Data.Hashable as Exports (Hashable)
+
+-- fx
+-------------------------
+import Fx as Exports (Fx)
+
+-- contravariant
+-------------------------
+import Data.Functor.Contravariant.Divisible as Exports
