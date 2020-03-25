@@ -4,9 +4,13 @@ module Canapi.Prelude
 )
 where
 
+-- base
+-------------------------
+import System.IO as Exports
+
 -- coalmine
 -------------------------
-import Coalmine.Prelude as Exports
+import Coalmine.Prelude as Exports hiding ((<.), (.>))
 
 -- bytestring
 -------------------------
@@ -58,3 +62,7 @@ import Fx as Exports (Fx)
 -- contravariant
 -------------------------
 import Data.Functor.Contravariant.Divisible as Exports
+
+-- flow
+-------------------------
+import Flow as Exports

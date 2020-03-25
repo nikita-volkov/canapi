@@ -21,6 +21,7 @@ library
   exposed-modules:
     Canapi
   other-modules:
+    Canapi.Application
     Canapi.ByType
     Canapi.Data
     Canapi.HeaderParsing
@@ -43,6 +44,7 @@ library
     coalmine,
     contravariant,
     cpu >=0.1.2 && <0.2,
+    flow >=1.0.19 && <1.1,
     foldl >=1.4.6 && <2,
     fx,
     hashable >=1 && <2,
