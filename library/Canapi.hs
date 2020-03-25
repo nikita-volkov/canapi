@@ -203,15 +203,19 @@ asFile contentType = error "TODO"
 -- * Instances
 -------------------------
 
-instance Functor SegmentParser where
-  fmap mapper (SegmentParser description parser) = SegmentParser description (fmap mapper parser)
+deriving instance Functor SegmentParser
 
-instance Functor Receiver where
-  fmap = error "TODO"
+deriving instance Functor Receiver
 
 instance Applicative Receiver where
-  pure = error "TODO"
-  (<*>) = error "TODO"
+  pure = Receiver [] . const . pure
+  (<*>) (Receiver a b) (Receiver c d) = Receiver e f where
+    e = if null a
+      then c
+      else if null c
+        then a
+        else intersect a c
+    f input = b input <*> d input
 
 instance Contravariant Responder where
   contramap mapper (Responder mediaType response) = Responder mediaType (response . mapper)
