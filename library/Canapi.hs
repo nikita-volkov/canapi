@@ -37,9 +37,9 @@ data Resource env params =
   RedirectResource Int (params -> Either Text Text) |
   FileSystemResource FilePath
 
-data Receiver a = Receiver HttpMedia.MediaType (ByteString -> Either Text a)
+data Receiver a = Receiver [HttpMedia.MediaType] (ByteString -> Either Text a)
 
-data Responder a = Responder HttpMedia.MediaType (a -> Wai.Response)
+data Responder a = Responder [HttpMedia.MediaType] (a -> Wai.Response)
 
 data SegmentParser a = SegmentParser Text (Attoparsec.Parser a)
 
@@ -120,7 +120,7 @@ runReceiverList receiverList = \ case
     Receiver _ refiner : _ -> Just refiner
     _ -> Nothing
   where
-    mediaAssocList = receiverList & fmap (\ (Receiver a b) -> (a, b))
+    mediaAssocList = receiverList & fmap (\ (Receiver a b) -> fmap (,b) a) & join
 
 runResponderList :: [Responder response] -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
 runResponderList responderList acceptHeader contentTypeHeader =
@@ -131,7 +131,7 @@ runResponderList responderList acceptHeader contentTypeHeader =
     byHead = case mediaAssocList of
       (_, a) : _ -> Just a
       _ -> Nothing
-    mediaAssocList = responderList & fmap (\ (Responder a b) -> (a, b))
+    mediaAssocList = responderList & fmap (\ (Responder a b) -> fmap (,b) a) & join
 
 
 -- * DSL
@@ -163,6 +163,41 @@ authenticated = AuthenticatedResource
 
 temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource env params
 temporaryRedirect = RedirectResource
+
+-- ** Receiver
+-------------------------
+
+ofJson :: (Aeson.Value -> Either Text request) -> Receiver request
+ofJson aesonParser = Receiver MimeTypeList.json decoder where
+  decoder = first fromString . Aeson.eitherDecodeStrict' >=> aesonParser
+
+ofYaml :: (Aeson.Value -> Either Text request) -> Receiver request
+ofYaml aesonParser = Receiver MimeTypeList.yaml decoder where
+  decoder input = do
+    ast <- left (fromString . Yaml.prettyPrintParseException) (Yaml.decodeEither' input)
+    aesonParser ast
+
+{-|
+Bytes of any content type. 
+
+Can be used to get the source bytes of another receiver when applicatively composed with it.
+-}
+ofAny :: Receiver ByteString
+ofAny = Receiver [] Right
+
+-- ** Responder
+-------------------------
+
+asJson :: Responder Aeson.Value
+asJson = Responder MimeTypeList.json responseFn where
+  responseFn response = Response.ok "application/json" (Aeson.fromEncoding (Aeson.toEncoding response))
+
+asYaml :: Responder Aeson.Value
+asYaml = Responder MimeTypeList.yaml responseFn where
+  responseFn response = Response.ok "application/yaml" (Aeson.fromEncoding (Aeson.toEncoding response))
+
+asFile :: Text -> Responder FilePath
+asFile contentType = error "TODO"
 
 
 -- * Instances
