@@ -56,7 +56,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Attoparsec.Text as Attoparsec
 import qualified Data.Aeson as Aeson
 import qualified Data.Yaml as Yaml
-import qualified Data.HashMap.Strict as HashMap
+import qualified Data.Map.Strict as Map
 import qualified Control.Foldl as Foldl
 import qualified Fx
 
@@ -154,7 +154,16 @@ runReceiverList receiverList = \ case
     Receiver _ refiner : _ -> Just refiner
     _ -> Nothing
   where
-    mediaAssocList = receiverList & fmap (\ (Receiver a b) -> fmap (,b) a) & join
+    mediaAssocList =
+      receiverList &
+      foldl' (\ map (Receiver mediaTypeList refiner) ->
+        foldl' (\ map mediaType -> Map.insertWith mergeRefiners mediaType refiner map)
+          map mediaTypeList) Map.empty &
+      Map.toList
+      where
+        mergeRefiners l r source = case l source of
+          Left err -> r source
+          Right res -> Right res
 
 runResponderList :: [Responder response] -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
 runResponderList responderList acceptHeader contentTypeHeader =
