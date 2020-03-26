@@ -166,6 +166,12 @@ authenticated = AuthenticatedResource
 temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource env params
 temporaryRedirect = RedirectResource
 
+-- ** SegmentParser
+-------------------------
+
+segment :: Text -> Attoparsec.Parser segment -> SegmentParser segment
+segment = SegmentParser
+
 -- ** Receiver
 -------------------------
 
