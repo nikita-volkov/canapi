@@ -1,4 +1,35 @@
-module Canapi where
+module Canapi (
+    Resource,
+    SegmentParser,
+    Receiver,
+    Responder,
+    Realm,
+    MediaType,
+    Err(..),
+    -- * Execution
+    serve,
+    buildWaiApplication,
+    -- * Resource
+    at,
+    by,
+    head,
+    get,
+    post,
+    put,
+    delete,
+    authenticated,
+    temporaryRedirect,
+    -- * SegmentParser
+    segment,
+    -- * Receiver
+    ofJson,
+    ofYaml,
+    ofAny,
+    -- * Responder
+    asJson,
+    asYaml,
+    asFile,
+  ) where
 
 import Canapi.Prelude hiding (delete, get, put, head)
 import Canapi.Data
