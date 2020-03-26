@@ -49,6 +49,8 @@ data Err =
 
 newtype Realm = Realm ByteString
 
+newtype MediaType = MediaType HttpMedia.MediaType
+
 
 -- * Execution
 -------------------------
@@ -196,8 +198,8 @@ asYaml :: Responder Aeson.Value
 asYaml = Responder MimeTypeList.yaml responseFn where
   responseFn response = Response.ok "application/yaml" (Aeson.fromEncoding (Aeson.toEncoding response))
 
-asFile :: Text -> Responder FilePath
-asFile contentType = error "TODO"
+asFile :: MediaType -> Responder FilePath
+asFile (MediaType contentType) = Responder [contentType] (Response.file (HttpMedia.renderHeader contentType))
 
 
 -- * Instances
@@ -224,3 +226,8 @@ instance IsString Realm where
   fromString string = if all (\ a -> isAscii a && isPrint a && a /= '"') string
     then Realm (fromString string)
     else error "Not a valid realm"
+
+deriving instance Show MediaType
+deriving instance IsString MediaType
+deriving instance Ord MediaType
+deriving instance Eq MediaType
