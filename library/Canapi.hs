@@ -22,9 +22,10 @@ module Canapi (
     -- * SegmentParser
     segment,
     -- * Receiver
-    ofJson,
-    ofYaml,
-    ofAny,
+    ofJsonAst,
+    ofJsonBytes,
+    ofYamlAst,
+    ofYamlBytes,
     -- * Responder
     asJson,
     asYaml,
@@ -206,23 +207,21 @@ segment = SegmentParser
 -- ** Receiver
 -------------------------
 
-ofJson :: (Aeson.Value -> Either Text request) -> Receiver request
-ofJson aesonParser = Receiver MimeTypeList.json decoder where
+ofJsonAst :: (Aeson.Value -> Either Text request) -> Receiver request
+ofJsonAst aesonParser = ofJsonBytes decoder where
   decoder = first fromString . Aeson.eitherDecodeStrict' >=> aesonParser
 
-ofYaml :: (Aeson.Value -> Either Text request) -> Receiver request
-ofYaml aesonParser = Receiver MimeTypeList.yaml decoder where
+ofJsonBytes :: (ByteString -> Either Text request) -> Receiver request
+ofJsonBytes = Receiver MimeTypeList.json
+
+ofYamlAst :: (Aeson.Value -> Either Text request) -> Receiver request
+ofYamlAst aesonParser = ofYamlBytes decoder where
   decoder input = do
     ast <- left (fromString . Yaml.prettyPrintParseException) (Yaml.decodeEither' input)
     aesonParser ast
 
-{-|
-Bytes of any content type. 
-
-Can be used to get the source bytes of another receiver when applicatively composed with it.
--}
-ofAny :: Receiver ByteString
-ofAny = Receiver [] Right
+ofYamlBytes :: (ByteString -> Either Text request) -> Receiver request
+ofYamlBytes = Receiver MimeTypeList.yaml
 
 -- ** Responder
 -------------------------
