@@ -16,14 +16,14 @@ root :: [Resource Env ()]
 root = [
     at "groups" [],
     at "rpc" [
-      by [nameParser] [
-        by [nameParser] [
-          put [validatedRpcSchemaSourceReceiver] [] (uncurryH putRpcSchemaHandler),
+      by nameSegmentParser [
+        by nameSegmentParser [
+          put validatedRpcSchemaSourceReceiver mempty (uncurryH putRpcSchemaHandler),
           get (error "TODO") (error "TODO"),
           at "artifacts" [
             get (error "TODO") (error "TODO"),
-            by [languageParser] [
-              get [artifactsResponder] (uncurryH getLanguageArtifacts)
+            by languageSegmentParser [
+              get artifactsResponder (uncurryH getLanguageArtifacts)
             ]
           ]
         ]
@@ -31,11 +31,11 @@ root = [
     ]
   ]
 
-nameParser :: SegmentParser Name
-nameParser = error "TODO"
+nameSegmentParser :: SegmentParser Name
+nameSegmentParser = error "TODO"
 
-languageParser :: SegmentParser Language
-languageParser = error "TODO"
+languageSegmentParser :: SegmentParser Language
+languageSegmentParser = error "TODO"
 
 validatedRpcSchemaSourceReceiver :: Receiver ByteString
 validatedRpcSchemaSourceReceiver = error "TODO"
