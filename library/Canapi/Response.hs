@@ -30,6 +30,12 @@ unauthorized realm = Wai.responseBuilder HttpTypes.status401 headers mempty wher
       ("WWW-Authenticate", "Basic realm=\"" <> realm <> "\"")
     ]
 
+file :: ByteString -> FilePath -> Wai.Response
+file contentType path = Wai.responseFile HttpTypes.status200 headers path Nothing where
+  headers = [
+      ("content-type", contentType)
+    ]
+
 alternate :: Wai.Response -> Wai.Response -> Wai.Response
 alternate response1 response2 =
   let statusCode1 = HttpTypes.statusCode (Wai.responseStatus response1)
