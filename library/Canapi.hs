@@ -7,8 +7,7 @@ module Canapi (
     MediaType,
     Err(..),
     -- * Execution
-    serve,
-    buildWaiApplication,
+    run,
     -- * Resource
     at,
     by,
@@ -61,13 +60,15 @@ import qualified Control.Foldl as Foldl
 import qualified Fx
 
 
-data Resource env params =
-  AtResource Text [Resource env params] |
-  forall segment. ByResource (SegmentParser segment) [Resource env (segment, params)] |
-  forall identity. AuthenticatedResource Realm (Text -> Text -> Fx env Err (Maybe identity)) [Resource env (identity, params)] |
-  forall request response. HandlerResource HttpTypes.Method (Receiver request) (Responder response) (params -> request -> Fx env Err response) |
-  RedirectResource Int (params -> Either Text Text) |
-  FileSystemResource FilePath
+newtype Resource env params = Resource [ResourceNode env params]
+
+data ResourceNode env params =
+  AtResourceNode Text [ResourceNode env params] |
+  forall segment. ByResourceNode (SegmentParser segment) [ResourceNode env (segment, params)] |
+  forall identity. AuthenticatedResourceNode Realm (Text -> Text -> Fx env Err (Maybe identity)) [ResourceNode env (identity, params)] |
+  forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Responder response) (params -> request -> Fx env Err response) |
+  RedirectResourceNode Int (params -> Either Text Text) |
+  FileSystemResourceNode FilePath
 
 data Receiver a = Receiver [(HttpMedia.MediaType, ByteString -> Either Text a)]
 
@@ -87,23 +88,27 @@ newtype MediaType = MediaType HttpMedia.MediaType
 -- * Execution
 -------------------------
 
-serve :: [Resource env ()] -> Word16 -> Bool -> Fx env err Void
-serve resourceList port cors =
+run :: Resource env () -> Word16 -> Bool -> Fx env err Void
+run resource port cors =
   Fx.runTotalIO $ \ env -> do
-    Warp.run (fromIntegral port) (corsify (buildWaiApplication env () resourceList))
+    Warp.run (fromIntegral port) (corsify (resourceApplication env () resource))
     fail "Warp unexpectedly stopped"
   where
     corsify = if cors then Application.corsify else id
 
-buildWaiApplication :: env -> params -> [Resource env params] -> Wai.Application
-buildWaiApplication env params = Application.concat . fmap fromResource where
-  fromResource = \ case
-    AtResource segment subResourceList ->
-      Application.matchSegment segment (buildWaiApplication env params subResourceList)
-    ByResource (SegmentParser _ parser) subResourceList ->
+resourceApplication :: env -> params -> Resource env params -> Wai.Application
+resourceApplication env params (Resource resourceNodeList) =
+  resourceNodeListApplication env params resourceNodeList
+
+resourceNodeListApplication :: env -> params -> [ResourceNode env params] -> Wai.Application
+resourceNodeListApplication env params = Application.concat . fmap fromResourceNode where
+  fromResourceNode = \ case
+    AtResourceNode segment subResourceNodeList ->
+      Application.matchSegment segment (resourceNodeListApplication env params subResourceNodeList)
+    ByResourceNode (SegmentParser _ parser) subResourceNodeList ->
       Application.attoparseSegment parser $ \ segment ->
-      buildWaiApplication env (segment, params) subResourceList
-    AuthenticatedResource (Realm realm) handler subResourceList ->
+      resourceNodeListApplication env (segment, params) subResourceNodeList
+    AuthenticatedResourceNode (Realm realm) handler subResourceNodeList ->
       Application.authorizing realm $ \ username password request respond ->
       Fx.runFxHandling
         (\ case
@@ -114,10 +119,10 @@ buildWaiApplication env params = Application.concat . fmap fromResource where
         (Fx.provideAndUse (pure env) (do
             authentication <- handler username password
             case authentication of
-              Just identity -> Fx.runTotalIO (const (buildWaiApplication env (identity, params) subResourceList request respond))
+              Just identity -> Fx.runTotalIO (const (resourceNodeListApplication env (identity, params) subResourceNodeList request respond))
               Nothing -> Fx.runTotalIO (const (respond (Response.unauthorized realm)))
           ))
-    HandlerResource method receiver responder handler -> \ request -> let
+    HandlerResourceNode method receiver responder handler -> \ request -> let
       headers = Wai.requestHeaders request
       (acceptHeader, contentTypeHeader) = headers & Foldl.fold ((,) <$> Foldl.lookup "accept" <*> Foldl.lookup "content-type")
       in if Wai.requestMethod request /= method
@@ -140,7 +145,7 @@ buildWaiApplication env params = Application.concat . fmap fromResource where
                     (Fx.provideAndUse (pure env) (do
                       response <- handler params request
                       Fx.runTotalIO (const (respond (encoder response)))))
-    RedirectResource timeout buildUri -> const $ apply $ case buildUri params of
+    RedirectResourceNode timeout buildUri -> const $ apply $ case buildUri params of
       Right uri -> Response.temporaryRedirect timeout uri
       Left err -> Response.plainBadRequest err
     _ -> error "TODO"
@@ -176,32 +181,32 @@ runResponder (Responder spec) acceptHeader contentTypeHeader =
 -- * DSL
 -------------------------
 
-at :: Text -> [Resource env params] -> Resource env params
-at = AtResource
+at :: Text -> Resource env params -> Resource env params
+at segment (Resource resourceNodeList) = AtResourceNode segment resourceNodeList & pure & Resource
 
-by :: SegmentParser segment -> [Resource env (segment, params)] -> Resource env params
-by = ByResource
+by :: SegmentParser segment -> Resource env (segment, params) -> Resource env params
+by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser resourceNodeList & pure & Resource
 
 head :: (params -> Fx env Err ()) -> Resource env params
-head handler = HandlerResource "head" mempty mempty (\ params () -> handler params)
+head handler = HandlerResourceNode "head" mempty mempty (\ params () -> handler params) & pure & Resource
 
 get :: Responder response -> (params -> Fx env Err response) -> Resource env params
-get responder handler = HandlerResource "get" mempty responder (\ params () -> handler params)
+get responder handler = HandlerResourceNode "get" mempty responder (\ params () -> handler params) & pure & Resource
 
 post :: Receiver request -> Responder response -> (params -> request -> Fx env Err response) -> Resource env params
-post = HandlerResource "post"
+post receiver responder handler = HandlerResourceNode "post" receiver responder handler & pure & Resource
 
 put :: Receiver request -> Responder response -> (params -> request -> Fx env Err response) -> Resource env params
-put = HandlerResource "put"
+put receiver responder handler = HandlerResourceNode "put" receiver responder handler & pure & Resource
 
 delete :: Responder response -> (params -> Fx env Err response) -> Resource env params
-delete responder handler = HandlerResource "delete" mempty responder (\ params () -> handler params)
+delete responder handler = HandlerResourceNode "delete" mempty responder (\ params () -> handler params) & pure & Resource
 
-authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> [Resource env (identity, params)] -> Resource env params
-authenticated = AuthenticatedResource
+authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> Resource env (identity, params) -> Resource env params
+authenticated realm handler (Resource resourceNodeList) = AuthenticatedResourceNode realm handler resourceNodeList & pure & Resource
 
 temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource env params
-temporaryRedirect = RedirectResource
+temporaryRedirect timeout uriBuilder = RedirectResourceNode timeout uriBuilder & pure & Resource
 
 -- ** SegmentParser
 -------------------------
@@ -247,10 +252,17 @@ asFile (MediaType contentType) = Responder [(contentType, Response.file (HttpMed
 -------------------------
 
 instance Contravariant (Resource env) where
+  contramap fn (Resource list) = Resource (fmap (contramap fn) list)
+
+deriving instance Semigroup (Resource env params)
+
+deriving instance Monoid (Resource env params)
+
+instance Contravariant (ResourceNode env) where
   contramap fn = \ case
-    AtResource segment nodeList -> AtResource segment (fmap (contramap fn) nodeList)
-    ByResource parser nodeList -> ByResource parser (fmap (contramap (second fn)) nodeList)
-    HandlerResource method receiver responder handler -> HandlerResource method receiver responder (handler . fn)
+    AtResourceNode segment nodeList -> AtResourceNode segment (fmap (contramap fn) nodeList)
+    ByResourceNode parser nodeList -> ByResourceNode parser (fmap (contramap (second fn)) nodeList)
+    HandlerResourceNode method receiver responder handler -> HandlerResourceNode method receiver responder (handler . fn)
     _ -> error "TODO"
 
 deriving instance Functor SegmentParser

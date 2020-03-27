@@ -12,23 +12,23 @@ data Artifacts
 
 data Name
 
-root :: [Resource Env ()]
-root = [
-    at "groups" [],
-    at "rpc" [
-      by nameSegmentParser [
-        by nameSegmentParser [
+root :: Resource Env ()
+root = mconcat [
+    at "groups" mempty,
+    at "rpc" (mconcat [
+      by nameSegmentParser (mconcat [
+        by nameSegmentParser (mconcat [
           put validatedRpcSchemaSourceReceiver mempty (uncurryH putRpcSchemaHandler),
           get (error "TODO") (error "TODO"),
-          at "artifacts" [
+          at "artifacts" (mconcat [
             get (error "TODO") (error "TODO"),
-            by languageSegmentParser [
+            by languageSegmentParser (mconcat [
               get artifactsResponder (uncurryH getLanguageArtifacts)
-            ]
-          ]
-        ]
-      ]
-    ]
+            ])
+          ])
+        ])
+      ])
+    ])
   ]
 
 nameSegmentParser :: SegmentParser Name
