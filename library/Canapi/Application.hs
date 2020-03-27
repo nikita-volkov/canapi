@@ -78,7 +78,8 @@ whenNoSegmentsIsLeft application request = if RequestAccessor.hasNoSegmentsLeft 
 routingTree :: RoutingTree.RoutingTree -> Application
 routingTree (RoutingTree.RoutingTree segmentParser methodHandlerMap) = refineSegmentOr onNoSegment onSegment where
   onSegment = segmentParser >>> \ case
-    Left err -> Left (Response.plainBadRequest err)
+    Left Nothing -> Left Response.notFound
+    Left (Just err) -> Left (Response.plainBadRequest err)
     Right nestedTree -> Right (routingTree nestedTree)
   onNoSegment = routingTreeMethodHandlerMap methodHandlerMap
 

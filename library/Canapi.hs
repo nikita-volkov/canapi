@@ -55,6 +55,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Yaml as Yaml
 import qualified Data.Map.Strict as Map
 import qualified Control.Foldl as Foldl
+import qualified Canapi.RoutingTree as RoutingTree
 import qualified Fx
 
 
@@ -91,6 +92,26 @@ run resource port cors =
   Fx.runTotalIO $ \ env -> Warp.run (fromIntegral port) (corsify (resourceApplication env () resource))
   where
     corsify = if cors then Application.corsify else id
+
+resourceNodeRoutingTree :: env -> params -> ResourceNode env params -> RoutingTree.RoutingTree
+resourceNodeRoutingTree env params = \ case
+  AtResourceNode segment subResourceNodeList ->
+    RoutingTree.RoutingTree
+      (\ actualSegment -> if segment == actualSegment
+        then Right (resourceNodeListRoutingTree env params subResourceNodeList)
+        else Left Nothing)
+      mempty
+  ByResourceNode (SegmentParser _ segmentParser) subResourceNodeList ->
+    RoutingTree.RoutingTree
+      (\ segment ->
+        Attoparsec.parseOnly (segmentParser <* Attoparsec.endOfInput) segment &
+        bimap (Just . fromString) (\ segment ->
+          resourceNodeListRoutingTree env (segment, params) subResourceNodeList))
+      mempty
+  _ -> error "TODO"
+
+resourceNodeListRoutingTree :: env -> params -> [ResourceNode env params] -> RoutingTree.RoutingTree
+resourceNodeListRoutingTree = error "TODO"
 
 resourceApplication :: env -> params -> Resource env params -> Wai.Application
 resourceApplication env params (Resource resourceNodeList) =
