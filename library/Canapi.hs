@@ -38,8 +38,6 @@ import qualified Canapi.RequestAccessor as RequestAccessor
 import qualified Canapi.ByType as ByType
 import qualified Canapi.Response as Response
 import qualified Canapi.MimeTypeList as MimeTypeList
-import qualified Data.Serialize.Get as CerealGet
-import qualified Data.Serialize.Put as CerealPut
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Internal as Wai
 import qualified Network.Wai.Application.Static as WaiStatic
