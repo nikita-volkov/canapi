@@ -5,10 +5,17 @@ import Canapi.Prelude
 import Network.Wai
 import qualified Network.Wai.Middleware.Cors as WaiCors
 import qualified Network.HTTP.Types as HttpTypes
-import qualified Canapi.Response as Response
+import qualified Network.HTTP.Media as HttpMedia
 import qualified Data.Attoparsec.Text as Attoparsec
+import qualified Data.ByteString.Lazy as LazyByteString
+import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
+import qualified Data.Text.Encoding as Text
 import qualified Canapi.HttpAuthorizationParsing as HttpAuthorizationParsing
 import qualified Canapi.RequestAccessor as RequestAccessor
+import qualified Canapi.Response as Response
+import qualified Canapi.RoutingTree as RoutingTree
 
 
 concat :: [Application] -> Application
@@ -41,12 +48,16 @@ attoparseSegment parser cont =
     )
 
 refineSegment :: (Text -> Either Response Application) -> Application
-refineSegment refiner request = case pathInfo request of
+refineSegment = refineSegmentOr (const (apply Response.notFound))
+
+refineSegmentOr :: Application -> (Text -> Either Response Application) -> Application
+refineSegmentOr alternative refiner request = case pathInfo request of
+  [""] -> alternative request
   segmentsHead : segmentsTail ->
     case refiner segmentsHead of
       Right cont -> cont (request { pathInfo = segmentsTail })
       Left err -> apply err
-  _ -> apply Response.notFound
+  _ -> alternative request
 
 authorizing :: ByteString -> (Text -> Text -> Application) -> Application
 authorizing realm cont request = case requestHeaders request & lookup "authorization" of
@@ -59,3 +70,54 @@ whenNoSegmentsIsLeft :: Application -> Application
 whenNoSegmentsIsLeft application request = if RequestAccessor.hasNoSegmentsLeft request
   then application request
   else apply Response.notFound
+
+
+-- * Routing tree
+-------------------------
+
+routingTree :: RoutingTree.RoutingTree -> Application
+routingTree (RoutingTree.RoutingTree segmentParser methodHandlerMap) = refineSegmentOr onNoSegment onSegment where
+  onSegment = segmentParser >>> \ case
+    Left err -> Left (Response.plainBadRequest err)
+    Right nestedTree -> Right (routingTree nestedTree)
+  onNoSegment = routingTreeMethodHandlerMap methodHandlerMap
+
+routingTreeMethodHandlerMap :: RoutingTree.MethodHandlerMap -> Application
+routingTreeMethodHandlerMap methodHandlerMap request =
+  case Map.lookup (requestMethod request) methodHandlerMap of
+    Just contentTypeHandlerMap -> routingTreeContentTypeHandlerMap contentTypeHandlerMap request
+    Nothing -> apply Response.methodNotAllowed
+
+routingTreeContentTypeHandlerMap :: RoutingTree.ContentTypeHandlerMap -> Application
+routingTreeContentTypeHandlerMap (RoutingTree.MapWithDefault defaultAcceptHandlerMap byContentTypeMap) request =
+  case lookup "content-type" (requestHeaders request) of
+    Just contentType -> case HttpMedia.mapContentMedia (Map.toList byContentTypeMap) contentType of
+      Just acceptHandlerMap -> routingTreeAcceptHandlerMap acceptHandlerMap request
+      Nothing -> apply Response.unsupportedMediaType 
+    Nothing -> routingTreeAcceptHandlerMap defaultAcceptHandlerMap request
+
+routingTreeAcceptHandlerMap :: RoutingTree.AcceptHandlerMap -> Application
+routingTreeAcceptHandlerMap (RoutingTree.MapWithDefault defaultHandler byAcceptMap) request =
+  case lookup "accept" (requestHeaders request) of
+    Just accept -> case HttpMedia.mapAcceptMedia byAcceptList accept of
+      Just handler -> routingTreeHandler handler request
+      Nothing -> apply Response.notAcceptable
+    Nothing -> case lookup "content-type" (requestHeaders request) of
+      Just contentType -> case HttpMedia.mapAcceptMedia byAcceptList contentType of
+        Just handler -> routingTreeHandler handler request
+        Nothing -> apply Response.notAcceptable 
+      Nothing -> routingTreeHandler defaultHandler request
+  where
+    byAcceptList = Map.toList byAcceptMap
+
+routingTreeHandler :: RoutingTree.Handler -> Application
+routingTreeHandler handler request respond = do
+  requestBody <- strictRequestBody request
+  handling <- handler (LazyByteString.toStrict requestBody)
+  case handling of
+    Left err -> case err of
+      RoutingTree.ServerErr err -> do
+        Text.hPutStrLn stderr err
+        respond Response.internalServerError
+      RoutingTree.ClientErr err -> respond (Response.plainBadRequest err)
+    Right response -> respond response
