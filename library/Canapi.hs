@@ -246,6 +246,13 @@ asFile (MediaType contentType) = Responder [(contentType, Response.file (HttpMed
 -- * Instances
 -------------------------
 
+instance Contravariant (Resource env) where
+  contramap fn = \ case
+    AtResource segment nodeList -> AtResource segment (fmap (contramap fn) nodeList)
+    ByResource parser nodeList -> ByResource parser (fmap (contramap (second fn)) nodeList)
+    HandlerResource method receiver responder handler -> HandlerResource method receiver responder (handler . fn)
+    _ -> error "TODO"
+
 deriving instance Functor SegmentParser
 
 instance Semigroup (SegmentParser a) where
