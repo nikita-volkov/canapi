@@ -8,6 +8,7 @@ import qualified Network.HTTP.Types as HttpTypes
 import qualified Canapi.Response as Response
 import qualified Data.Attoparsec.Text as Attoparsec
 import qualified Canapi.HttpAuthorizationParsing as HttpAuthorizationParsing
+import qualified Canapi.RequestAccessor as RequestAccessor
 
 
 concat :: [Application] -> Application
@@ -53,3 +54,8 @@ authorizing realm cont request = case requestHeaders request & lookup "authoriza
     Right (username, password) -> cont username password request
     Left err -> apply (Response.plainBadRequest err)
   Nothing -> apply (Response.unauthorized realm)
+
+whenNoSegmentsIsLeft :: Application -> Application
+whenNoSegmentsIsLeft application request = if RequestAccessor.hasNoSegmentsLeft request
+  then application request
+  else apply Response.notFound

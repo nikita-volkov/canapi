@@ -120,7 +120,7 @@ resourceNodeListApplication env params = Application.concat . fmap fromResourceN
               Just identity -> Fx.runTotalIO (const (resourceNodeListApplication env (identity, params) subResourceNodeList request respond))
               Nothing -> Fx.runTotalIO (const (respond (Response.unauthorized realm)))
           ))
-    HandlerResourceNode method receiver responder handler -> \ request -> let
+    HandlerResourceNode method receiver responder handler -> Application.whenNoSegmentsIsLeft $ \ request -> let
       headers = Wai.requestHeaders request
       (acceptHeader, contentTypeHeader) = headers & Foldl.fold ((,) <$> Foldl.lookup "accept" <*> Foldl.lookup "content-type")
       in if Wai.requestMethod request /= method
