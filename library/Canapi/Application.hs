@@ -11,7 +11,10 @@ import qualified Canapi.HttpAuthorizationParsing as HttpAuthorizationParsing
 
 
 concat :: [Application] -> Application
-concat = foldl1' alternate
+concat = foldl' alternate notFound
+
+notFound :: Application
+notFound _ = apply Response.notFound
 
 alternate :: Application -> Application -> Application
 alternate app1 app2 request respond =
