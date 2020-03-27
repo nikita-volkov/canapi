@@ -122,9 +122,9 @@ buildWaiApplication env params = Application.concat . fmap fromResource where
       (acceptHeader, contentTypeHeader) = headers & Foldl.fold ((,) <$> Foldl.lookup "accept" <*> Foldl.lookup "content-type")
       in if Wai.requestMethod request /= method
         then apply Response.methodNotAllowed
-        else case runReceiverList receiver contentTypeHeader of
+        else case runReceiver receiver contentTypeHeader of
           Nothing -> apply Response.unsupportedMediaType
-          Just decoder -> case runResponderList responder acceptHeader contentTypeHeader of
+          Just decoder -> case runResponder responder acceptHeader contentTypeHeader of
             Nothing -> apply Response.notAcceptable
             Just encoder -> \ respond -> do
               requestBody <- Wai.strictRequestBody request
@@ -145,15 +145,15 @@ buildWaiApplication env params = Application.concat . fmap fromResource where
       Left err -> Response.plainBadRequest err
     _ -> error "TODO"
 
-runReceiverList :: Receiver request -> Maybe ByteString -> Maybe (ByteString -> Either Text request)
-runReceiverList (Receiver spec) = \ case
+runReceiver :: Receiver request -> Maybe ByteString -> Maybe (ByteString -> Either Text request)
+runReceiver (Receiver spec) = \ case
   Just contentType -> HttpMedia.mapContentMedia spec contentType
   Nothing -> case spec of
     (_, refiner) : _ -> Just refiner
     _ -> Nothing
 
-runResponderList :: Responder response -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
-runResponderList (Responder spec) acceptHeader contentTypeHeader =
+runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
+runResponder (Responder spec) acceptHeader contentTypeHeader =
   byAccept <|> byContentType <|> byHead
   where
     byAccept = acceptHeader >>= HttpMedia.mapAcceptMedia spec
