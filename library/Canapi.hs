@@ -157,11 +157,11 @@ runReceiverList receiverList = \ case
     mediaAssocList =
       receiverList &
       foldl' (\ map (Receiver mediaTypeList refiner) ->
-        foldl' (\ map mediaType -> Map.insertWith mergeRefiners mediaType refiner map)
+        foldl' (\ map mediaType -> Map.insertWith alternateRefiners mediaType refiner map)
           map mediaTypeList) Map.empty &
       Map.toList
       where
-        mergeRefiners l r source = case l source of
+        alternateRefiners l r source = case l source of
           Left err -> r source
           Right res -> Right res
 
