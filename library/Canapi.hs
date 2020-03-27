@@ -88,11 +88,9 @@ newtype MediaType = MediaType HttpMedia.MediaType
 -- * Execution
 -------------------------
 
-run :: Resource env () -> Word16 -> Bool -> Fx env err Void
+run :: Resource env () -> Word16 -> Bool -> Fx env err ()
 run resource port cors =
-  Fx.runTotalIO $ \ env -> do
-    Warp.run (fromIntegral port) (corsify (resourceApplication env () resource))
-    fail "Warp unexpectedly stopped"
+  Fx.runTotalIO $ \ env -> Warp.run (fromIntegral port) (corsify (resourceApplication env () resource))
   where
     corsify = if cors then Application.corsify else id
 
