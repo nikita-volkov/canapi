@@ -238,6 +238,14 @@ asFile (MediaType contentType) = Responder [(contentType, Response.file (HttpMed
 
 deriving instance Functor SegmentParser
 
+instance Semigroup (SegmentParser a) where
+  (<>) (SegmentParser details1 parser1) (SegmentParser details2 parser2) =
+    SegmentParser (details1 <> details2) (parser1 <|> parser2)
+
+instance Monoid (SegmentParser a) where
+  mempty = SegmentParser [] empty
+  mappend = (<>)
+
 deriving instance Functor Receiver
 
 instance Semigroup (Receiver a) where
