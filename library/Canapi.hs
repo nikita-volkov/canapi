@@ -149,21 +149,23 @@ resourceNodeListApplication env params = Application.concat . fmap fromResourceN
     _ -> error "TODO"
 
 runReceiver :: Receiver request -> Maybe ByteString -> Maybe (ByteString -> Either Text request)
-runReceiver (Receiver spec) = \ case
-  Just contentType -> HttpMedia.mapContentMedia mediaAssocList contentType
-  Nothing -> case spec of
-    (_, refiner) : _ -> Just refiner
-    _ -> Nothing
-  where
-    mediaAssocList =
-      spec &
-      foldl' (\ map (mediaType, refiner) ->
-        Map.insertWith alternateRefiners mediaType refiner map) Map.empty &
-      Map.toList
-      where
-        alternateRefiners l r source = case l source of
-          Left err -> r source
-          Right res -> Right res
+runReceiver (Receiver spec) = case spec of
+  [] -> const (Just (const (Left "No decoder")))
+  _ -> \ case
+    Just contentType -> HttpMedia.mapContentMedia mediaAssocList contentType
+    Nothing -> case spec of
+      (_, refiner) : _ -> Just refiner
+      _ -> Nothing
+    where
+      mediaAssocList =
+        spec &
+        foldl' (\ map (mediaType, refiner) ->
+          Map.insertWith alternateRefiners mediaType refiner map) Map.empty &
+        Map.toList
+        where
+          alternateRefiners l r source = case l source of
+            Left err -> r source
+            Right res -> Right res
 
 runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
 runResponder (Responder spec) acceptHeader contentTypeHeader =
