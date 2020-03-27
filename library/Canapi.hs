@@ -56,7 +56,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Attoparsec.Text as Attoparsec
 import qualified Data.Aeson as Aeson
 import qualified Data.Yaml as Yaml
-import qualified Data.HashMap.Strict as HashMap
+import qualified Data.Map.Strict as Map
 import qualified Control.Foldl as Foldl
 import qualified Fx
 
@@ -147,10 +147,20 @@ buildWaiApplication env params = Application.concat . fmap fromResource where
 
 runReceiver :: Receiver request -> Maybe ByteString -> Maybe (ByteString -> Either Text request)
 runReceiver (Receiver spec) = \ case
-  Just contentType -> HttpMedia.mapContentMedia spec contentType
+  Just contentType -> HttpMedia.mapContentMedia mediaAssocList contentType
   Nothing -> case spec of
     (_, refiner) : _ -> Just refiner
     _ -> Nothing
+  where
+    mediaAssocList =
+      spec &
+      foldl' (\ map (mediaType, refiner) ->
+        Map.insertWith alternateRefiners mediaType refiner map) Map.empty &
+      Map.toList
+      where
+        alternateRefiners l r source = case l source of
+          Left err -> r source
+          Right res -> Right res
 
 runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
 runResponder (Responder spec) acceptHeader contentTypeHeader =

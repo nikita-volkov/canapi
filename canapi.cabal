@@ -44,6 +44,7 @@ library
     case-insensitive >=1.2.1 && <2,
     cereal >=0.5.8.1 && <0.6,
     coalmine,
+    containers,
     contravariant,
     cpu >=0.1.2 && <0.2,
     flow >=1.0.19 && <1.1,
