@@ -186,19 +186,19 @@ by :: SegmentParser segment -> Resource env (segment, params) -> Resource env pa
 by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser resourceNodeList & pure & Resource
 
 head :: (params -> Fx env Err ()) -> Resource env params
-head handler = HandlerResourceNode "head" mempty mempty (\ params () -> handler params) & pure & Resource
+head handler = HandlerResourceNode "HEAD" mempty mempty (\ params () -> handler params) & pure & Resource
 
 get :: Responder response -> (params -> Fx env Err response) -> Resource env params
-get responder handler = HandlerResourceNode "get" mempty responder (\ params () -> handler params) & pure & Resource
+get responder handler = HandlerResourceNode "GET" mempty responder (\ params () -> handler params) & pure & Resource
 
 post :: Receiver request -> Responder response -> (params -> request -> Fx env Err response) -> Resource env params
-post receiver responder handler = HandlerResourceNode "post" receiver responder handler & pure & Resource
+post receiver responder handler = HandlerResourceNode "POST" receiver responder handler & pure & Resource
 
 put :: Receiver request -> Responder response -> (params -> request -> Fx env Err response) -> Resource env params
-put receiver responder handler = HandlerResourceNode "put" receiver responder handler & pure & Resource
+put receiver responder handler = HandlerResourceNode "PUT" receiver responder handler & pure & Resource
 
 delete :: Responder response -> (params -> Fx env Err response) -> Resource env params
-delete responder handler = HandlerResourceNode "delete" mempty responder (\ params () -> handler params) & pure & Resource
+delete responder handler = HandlerResourceNode "DELETE" mempty responder (\ params () -> handler params) & pure & Resource
 
 authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> Resource env (identity, params) -> Resource env params
 authenticated realm handler (Resource resourceNodeList) = AuthenticatedResourceNode realm handler resourceNodeList & pure & Resource
