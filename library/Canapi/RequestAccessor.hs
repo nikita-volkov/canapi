@@ -35,3 +35,9 @@ headerMap = Wai.requestHeaders >>> fmap (first CaseInsensitive.foldedCase) >>> H
 headersOfInterest :: Wai.Request -> HeadersOfInterest
 headersOfInterest = Wai.requestHeaders >>> Foldl.fold fold where
   fold = HeadersOfInterest <$> Foldl.lookup "content-type" <*> Foldl.lookup "accept"
+
+hasNoSegmentsLeft :: Wai.Request -> Bool
+hasNoSegmentsLeft = Wai.pathInfo >>> \ case
+  [""] -> True
+  [] -> True
+  _ -> False

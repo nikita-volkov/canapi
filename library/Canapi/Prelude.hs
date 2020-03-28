@@ -43,6 +43,10 @@ import Network.IP.Addr as Exports (IP, NetAddr)
 -------------------------
 import Data.HashMap.Strict as Exports (HashMap)
 
+-- containers
+-------------------------
+import Data.Map.Strict as Exports (Map)
+
 -- case-insensitive
 -------------------------
 import Data.CaseInsensitive as Exports (CI)

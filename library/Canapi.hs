@@ -7,8 +7,7 @@ module Canapi (
     MediaType,
     Err(..),
     -- * Execution
-    serve,
-    buildWaiApplication,
+    run,
     -- * Resource
     at,
     by,
@@ -22,9 +21,10 @@ module Canapi (
     -- * SegmentParser
     segment,
     -- * Receiver
-    ofJson,
-    ofYaml,
-    ofAny,
+    ofJsonAst,
+    ofJsonBytes,
+    ofYamlAst,
+    ofYamlBytes,
     -- * Responder
     asJson,
     asYaml,
@@ -38,8 +38,6 @@ import qualified Canapi.RequestAccessor as RequestAccessor
 import qualified Canapi.ByType as ByType
 import qualified Canapi.Response as Response
 import qualified Canapi.MimeTypeList as MimeTypeList
-import qualified Data.Serialize.Get as CerealGet
-import qualified Data.Serialize.Put as CerealPut
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Internal as Wai
 import qualified Network.Wai.Application.Static as WaiStatic
@@ -55,24 +53,35 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Attoparsec.Text as Attoparsec
 import qualified Data.Aeson as Aeson
 import qualified Data.Yaml as Yaml
-import qualified Data.HashMap.Strict as HashMap
+import qualified Data.Map.Strict as Map
 import qualified Control.Foldl as Foldl
+import qualified Canapi.RoutingTree as RoutingTree
 import qualified Fx
+import qualified Canapi.Prelude as Prelude
 
 
-data Resource env params =
-  AtResource Text [Resource env params] |
-  forall segment. ByResource [SegmentParser segment] [Resource env (segment, params)] |
-  forall identity. AuthenticatedResource Realm (Text -> Text -> Fx env Err (Maybe identity)) [Resource env (identity, params)] |
-  forall request response. HandlerResource HttpTypes.Method [Receiver request] [Responder response] (params -> request -> Fx env Err response) |
-  RedirectResource Int (params -> Either Text Text) |
-  FileSystemResource FilePath
+-- * Types
+-------------------------
 
-data Receiver a = Receiver [HttpMedia.MediaType] (ByteString -> Either Text a)
+newtype Resource env params = Resource [ResourceNode env params]
 
-data Responder a = Responder [HttpMedia.MediaType] (a -> Wai.Response)
+data ResourceNode env params =
+  AtResourceNode Text [ResourceNode env params] |
+  forall segment. ByResourceNode (SegmentParser segment) [ResourceNode env (segment, params)] |
+  forall identity. AuthenticatedResourceNode Realm (Text -> Text -> Fx env Err (Maybe identity)) [ResourceNode env (identity, params)] |
+  forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Responder response) (params -> request -> Fx env Err response) |
+  RedirectResourceNode Int (params -> Either Text Text) |
+  FileSystemResourceNode FilePath
 
-data SegmentParser a = SegmentParser Text (Attoparsec.Parser a)
+data Receiver a =
+  TypedReceiver HttpMedia.MediaType (Map HttpMedia.MediaType (Decoder a)) |
+  UntypedReceiver (Decoder a)
+
+type Decoder a = ByteString -> Either Text a
+
+data Responder a = Responder [(HttpMedia.MediaType, a -> Wai.Response)]
+
+data SegmentParser a = SegmentParser [Text] (Attoparsec.Parser a)
 
 data Err =
   ClientErr Text |
@@ -86,178 +95,211 @@ newtype MediaType = MediaType HttpMedia.MediaType
 -- * Execution
 -------------------------
 
-serve :: [Resource env ()] -> Word16 -> Bool -> Fx env err Void
-serve resourceList port cors =
-  Fx.runTotalIO $ \ env -> do
-    Warp.run (fromIntegral port) (corsify (buildWaiApplication env () resourceList))
-    fail "Warp unexpectedly stopped"
+run :: Resource env () -> Word16 -> Bool -> Fx env err ()
+run resource port cors =
+  Fx.runTotalIO $ \ env -> Warp.run (fromIntegral port) (application env)
   where
-    corsify = if cors then Application.corsify else id
+    application env =
+      resourceRoutingTree env () resource &
+      Application.routingTree &
+      if cors then Application.corsify else id
 
-buildWaiApplication :: env -> params -> [Resource env params] -> Wai.Application
-buildWaiApplication env params = Application.concat . fmap fromResource where
-  fromResource = \ case
-    AtResource segment subResourceList ->
-      Application.matchSegment segment (buildWaiApplication env params subResourceList)
-    ByResource segmentParserList subResourceList -> let
-      parser = segmentParserList & fmap (\ (SegmentParser _ p) -> p) & asum
-      in
-        Application.attoparseSegment parser $ \ segment ->
-        buildWaiApplication env (segment, params) subResourceList
-    AuthenticatedResource (Realm realm) handler subResourceList ->
-      Application.authorizing realm $ \ username password request respond ->
-      Fx.runFxHandling
-        (\ case
-          ServerErr err -> do
-            Text.hPutStrLn stderr err
-            respond Response.internalServerError
-          ClientErr err -> respond (Response.plainBadRequest err))
-        (Fx.provideAndUse (pure env) (do
-            authentication <- handler username password
-            case authentication of
-              Just identity -> Fx.runTotalIO (const (buildWaiApplication env (identity, params) subResourceList request respond))
-              Nothing -> Fx.runTotalIO (const (respond (Response.unauthorized realm)))
-          ))
-    HandlerResource method receiverList responderList handler -> \ request -> let
-      headers = Wai.requestHeaders request
-      (acceptHeader, contentTypeHeader) = headers & Foldl.fold ((,) <$> Foldl.lookup "accept" <*> Foldl.lookup "content-type")
-      in if Wai.requestMethod request /= method
-        then apply Response.methodNotAllowed
-        else case runReceiverList receiverList contentTypeHeader of
-          Nothing -> apply Response.unsupportedMediaType
-          Just decoder -> case runResponderList responderList acceptHeader contentTypeHeader of
-            Nothing -> apply Response.notAcceptable
-            Just encoder -> \ respond -> do
-              requestBody <- Wai.strictRequestBody request
-              case decoder (LazyByteString.toStrict requestBody) of
-                Left err -> respond (Response.plainBadRequest err)
-                Right request ->
-                  Fx.runFxHandling
-                    (\ case
-                      ServerErr err -> do
-                        Text.hPutStrLn stderr err
-                        respond Response.internalServerError
-                      ClientErr err -> respond (Response.plainBadRequest err))
-                    (Fx.provideAndUse (pure env) (do
-                      response <- handler params request
-                      Fx.runTotalIO (const (respond (encoder response)))))
-    RedirectResource timeout buildUri -> const $ apply $ case buildUri params of
-      Right uri -> Response.temporaryRedirect timeout uri
-      Left err -> Response.plainBadRequest err
-    _ -> error "TODO"
+resourceRoutingTree :: env -> params -> Resource env params -> RoutingTree.RoutingTree
+resourceRoutingTree env params (Resource resourceNodeList) = resourceNodeListRoutingTree env params resourceNodeList
 
-runReceiverList :: [Receiver request] -> Maybe ByteString -> Maybe (ByteString -> Either Text request)
-runReceiverList receiverList = \ case
-  Just contentType -> HttpMedia.mapContentMedia mediaAssocList contentType
-  Nothing -> case receiverList of
-    Receiver _ refiner : _ -> Just refiner
-    _ -> Nothing
-  where
-    mediaAssocList = receiverList & fmap (\ (Receiver a b) -> fmap (,b) a) & join
+resourceNodeListRoutingTree :: env -> params -> [ResourceNode env params] -> RoutingTree.RoutingTree
+resourceNodeListRoutingTree env params = foldMap (resourceNodeRoutingTree env params)
 
-runResponderList :: [Responder response] -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
-runResponderList responderList acceptHeader contentTypeHeader =
-  byAccept <|> byContentType <|> byHead
-  where
-    byAccept = acceptHeader >>= HttpMedia.mapAcceptMedia mediaAssocList
-    byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia mediaAssocList
-    byHead = case mediaAssocList of
-      (_, a) : _ -> Just a
-      _ -> Nothing
-    mediaAssocList = responderList & fmap (\ (Responder a b) -> fmap (,b) a) & join
+resourceNodeRoutingTree :: env -> params -> ResourceNode env params -> RoutingTree.RoutingTree
+resourceNodeRoutingTree env params = \ case
+  AtResourceNode segment subResourceNodeList ->
+    RoutingTree.RoutingTree
+      (\ actualSegment -> if segment == actualSegment
+        then Right (resourceNodeListRoutingTree env params subResourceNodeList)
+        else Left Nothing)
+      mempty
+  ByResourceNode (SegmentParser _ segmentParser) subResourceNodeList ->
+    RoutingTree.RoutingTree
+      (\ segment ->
+        Attoparsec.parseOnly (segmentParser <* Attoparsec.endOfInput) segment &
+        bimap (Just . fromString) (\ segment ->
+          resourceNodeListRoutingTree env (segment, params) subResourceNodeList))
+      mempty
+  HandlerResourceNode method receiver responder handler ->
+    RoutingTree.RoutingTree (const (Left Nothing)) map
+    where
+      map = Map.fromList [(method, routingHandler)]
+      routingHandler contentType accept input =
+        case runReceiver receiver contentType input of
+          Left earlyResponse -> return earlyResponse
+          Right request -> case runResponder responder accept contentType of
+            Nothing -> return Response.notAcceptable
+            Just encoder ->
+              Fx.runFxHandling @IO
+                (\ case
+                  ServerErr err -> do
+                    Text.hPutStrLn stderr err
+                    return Response.internalServerError
+                  ClientErr err -> return (Response.plainBadRequest err))
+                (Fx.provideAndUse (pure env) (do
+                  response <- handler params request
+                  Fx.runTotalIO (const (return (encoder response)))))
+  _ -> error "TODO"
+
+runReceiver :: Receiver a -> Maybe ByteString -> ByteString -> Either Wai.Response a
+runReceiver = \ case
+  TypedReceiver defaultType map -> let
+    mediaAssocList = Map.toList map
+    defaultDecoder =
+      Map.lookup defaultType map &
+      fmap (fmap (first Response.plainBadRequest)) &
+      fromMaybe (const (Left Response.notFound))
+    in \ case
+      Just contentType -> case HttpMedia.mapContentMedia mediaAssocList contentType of
+        Just decoder -> first Response.plainBadRequest . decoder
+        Nothing -> const (Left Response.unsupportedMediaType)
+      Nothing -> defaultDecoder
+  UntypedReceiver decoder -> const (first Response.plainBadRequest . decoder)
+
+runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
+runResponder (Responder spec) acceptHeader contentTypeHeader =
+  case acceptHeader of
+    Just acceptHeader -> HttpMedia.mapAcceptMedia spec acceptHeader
+    Nothing -> byContentType <|> byHead where
+      byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia spec
+      byHead = case spec of
+        (_, a) : _ -> Just a
+        _ -> Nothing
 
 
 -- * DSL
 -------------------------
 
-at :: Text -> [Resource env params] -> Resource env params
-at = AtResource
+at :: Text -> Resource env params -> Resource env params
+at segment (Resource resourceNodeList) = AtResourceNode segment resourceNodeList & pure & Resource
 
-by :: [SegmentParser segment] -> [Resource env (segment, params)] -> Resource env params
-by = ByResource
+by :: SegmentParser segment -> Resource env (segment, params) -> Resource env params
+by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser resourceNodeList & pure & Resource
 
 head :: (params -> Fx env Err ()) -> Resource env params
-head handler = HandlerResource "head" [] [] (\ params () -> handler params)
+head handler = HandlerResourceNode "HEAD" (pure ()) mempty (\ params () -> handler params) & pure & Resource
 
-get :: [Responder response] -> (params -> Fx env Err response) -> Resource env params
-get responder handler = HandlerResource "get" [] responder (\ params () -> handler params)
+get :: Responder response -> (params -> Fx env Err response) -> Resource env params
+get responder handler = HandlerResourceNode "GET" (pure ()) responder (\ params () -> handler params) & pure & Resource
 
-post :: [Receiver request] -> [Responder response] -> (params -> request -> Fx env Err response) -> Resource env params
-post = HandlerResource "post"
+post :: Receiver request -> Responder response -> (params -> request -> Fx env Err response) -> Resource env params
+post receiver responder handler = HandlerResourceNode "POST" receiver responder handler & pure & Resource
 
-put :: [Receiver request] -> [Responder response] -> (params -> request -> Fx env Err response) -> Resource env params
-put = HandlerResource "put"
+put :: Receiver request -> Responder response -> (params -> request -> Fx env Err response) -> Resource env params
+put receiver responder handler = HandlerResourceNode "PUT" receiver responder handler & pure & Resource
 
-delete :: [Responder response] -> (params -> Fx env Err response) -> Resource env params
-delete responder handler = HandlerResource "delete" [] responder (\ params () -> handler params)
+delete :: Responder response -> (params -> Fx env Err response) -> Resource env params
+delete responder handler = HandlerResourceNode "DELETE" (pure ()) responder (\ params () -> handler params) & pure & Resource
 
-authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> [Resource env (identity, params)] -> Resource env params
-authenticated = AuthenticatedResource
+authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> Resource env (identity, params) -> Resource env params
+authenticated realm handler (Resource resourceNodeList) = AuthenticatedResourceNode realm handler resourceNodeList & pure & Resource
 
 temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource env params
-temporaryRedirect = RedirectResource
+temporaryRedirect timeout uriBuilder = RedirectResourceNode timeout uriBuilder & pure & Resource
 
 -- ** SegmentParser
 -------------------------
 
 segment :: Text -> Attoparsec.Parser segment -> SegmentParser segment
-segment = SegmentParser
+segment description = SegmentParser [description]
 
 -- ** Receiver
 -------------------------
 
-ofJson :: (Aeson.Value -> Either Text request) -> Receiver request
-ofJson aesonParser = Receiver MimeTypeList.json decoder where
+ofJsonAst :: (Aeson.Value -> Either Text request) -> Receiver request
+ofJsonAst aesonParser = ofJsonBytes decoder where
   decoder = first fromString . Aeson.eitherDecodeStrict' >=> aesonParser
 
-ofYaml :: (Aeson.Value -> Either Text request) -> Receiver request
-ofYaml aesonParser = Receiver MimeTypeList.yaml decoder where
+ofJsonBytes :: (ByteString -> Either Text request) -> Receiver request
+ofJsonBytes decoder = TypedReceiver (Prelude.head MimeTypeList.json) (Map.fromList (fmap (,decoder) MimeTypeList.json))
+
+ofYamlAst :: (Aeson.Value -> Either Text request) -> Receiver request
+ofYamlAst aesonParser = ofYamlBytes decoder where
   decoder input = do
     ast <- left (fromString . Yaml.prettyPrintParseException) (Yaml.decodeEither' input)
     aesonParser ast
 
-{-|
-Bytes of any content type. 
-
-Can be used to get the source bytes of another receiver when applicatively composed with it.
--}
-ofAny :: Receiver ByteString
-ofAny = Receiver [] Right
+ofYamlBytes :: (ByteString -> Either Text request) -> Receiver request
+ofYamlBytes decoder = TypedReceiver (Prelude.head MimeTypeList.yaml) (Map.fromList (fmap (,decoder) MimeTypeList.yaml))
 
 -- ** Responder
 -------------------------
 
 asJson :: Responder Aeson.Value
-asJson = Responder MimeTypeList.json responseFn where
+asJson = Responder (fmap (,responseFn) MimeTypeList.json) where
   responseFn response = Response.ok "application/json" (Aeson.fromEncoding (Aeson.toEncoding response))
 
 asYaml :: Responder Aeson.Value
-asYaml = Responder MimeTypeList.yaml responseFn where
+asYaml = Responder (fmap (,responseFn) MimeTypeList.yaml) where
   responseFn response = Response.ok "application/yaml" (Aeson.fromEncoding (Aeson.toEncoding response))
 
 asFile :: MediaType -> Responder FilePath
-asFile (MediaType contentType) = Responder [contentType] (Response.file (HttpMedia.renderHeader contentType))
+asFile (MediaType contentType) = Responder [(contentType, Response.file (HttpMedia.renderHeader contentType))]
 
 
 -- * Instances
 -------------------------
 
+instance Contravariant (Resource env) where
+  contramap fn (Resource list) = Resource (fmap (contramap fn) list)
+
+deriving instance Semigroup (Resource env params)
+
+deriving instance Monoid (Resource env params)
+
+instance Contravariant (ResourceNode env) where
+  contramap fn = \ case
+    AtResourceNode segment nodeList -> AtResourceNode segment (fmap (contramap fn) nodeList)
+    ByResourceNode parser nodeList -> ByResourceNode parser (fmap (contramap (second fn)) nodeList)
+    HandlerResourceNode method receiver responder handler -> HandlerResourceNode method receiver responder (handler . fn)
+    _ -> error "TODO"
+
 deriving instance Functor SegmentParser
+
+instance Semigroup (SegmentParser a) where
+  (<>) (SegmentParser details1 parser1) (SegmentParser details2 parser2) =
+    SegmentParser (details1 <> details2) (parser1 <|> parser2)
+
+instance Monoid (SegmentParser a) where
+  mempty = SegmentParser [] empty
+  mappend = (<>)
 
 deriving instance Functor Receiver
 
 instance Applicative Receiver where
-  pure = Receiver [] . const . pure
-  (<*>) (Receiver a b) (Receiver c d) = Receiver e f where
-    e = if null a
-      then c
-      else if null c
-        then a
-        else intersect a c
-    f input = b input <*> d input
+  pure a = UntypedReceiver (const (Right a))
+  (<*>) = \ case
+    UntypedReceiver dec1 -> \ case
+      UntypedReceiver dec2 -> UntypedReceiver (liftA2 (<*>) dec1 dec2)
+      TypedReceiver defType2 map2 -> TypedReceiver defType2 (fmap (liftA2 (<*>) dec1) map2)
+    TypedReceiver defType1 map1 -> \ case
+      UntypedReceiver dec2 -> TypedReceiver defType1 (fmap (\ dec1 -> liftA2 (<*>) dec1 dec2) map1)
+      TypedReceiver defType2 map2 -> TypedReceiver defType1 (Map.intersectionWith intersect map1 map2) where
+        intersect = liftA2 (<*>)
+
+instance Alternative Receiver where
+  empty = UntypedReceiver (const (Left "No decoder"))
+  (<|>) = \ case
+    UntypedReceiver dec1 -> const (UntypedReceiver dec1)
+    TypedReceiver defType1 map1 -> \ case
+      UntypedReceiver dec2 -> UntypedReceiver dec2
+      TypedReceiver defType2 map2 -> TypedReceiver defType1 (Map.unionWith union map1 map2) where
+        union = liftA2 (<!>)
 
 instance Contravariant Responder where
-  contramap mapper (Responder mediaType response) = Responder mediaType (response . mapper)
+  contramap mapper (Responder spec) = Responder (fmap (second (. mapper)) spec)
+
+instance Semigroup (Responder a) where
+  (<>) (Responder spec1) (Responder spec2) = Responder (spec1 <> spec2)
+
+instance Monoid (Responder a) where
+  mempty = Responder []
+  mappend = (<>)
 
 instance IsString Realm where
   fromString string = if all (\ a -> isAscii a && isPrint a && a /= '"') string
