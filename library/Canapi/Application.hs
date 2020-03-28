@@ -5,10 +5,17 @@ import Canapi.Prelude
 import Network.Wai
 import qualified Network.Wai.Middleware.Cors as WaiCors
 import qualified Network.HTTP.Types as HttpTypes
-import qualified Canapi.Response as Response
+import qualified Network.HTTP.Media as HttpMedia
 import qualified Data.Attoparsec.Text as Attoparsec
+import qualified Data.ByteString.Lazy as LazyByteString
+import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
+import qualified Data.Text.Encoding as Text
 import qualified Canapi.HttpAuthorizationParsing as HttpAuthorizationParsing
 import qualified Canapi.RequestAccessor as RequestAccessor
+import qualified Canapi.Response as Response
+import qualified Canapi.RoutingTree as RoutingTree
 
 
 concat :: [Application] -> Application
@@ -63,3 +70,31 @@ whenNoSegmentsIsLeft :: Application -> Application
 whenNoSegmentsIsLeft application request = if RequestAccessor.hasNoSegmentsLeft request
   then application request
   else apply Response.notFound
+
+
+-- * Routing tree
+-------------------------
+
+routingTree :: RoutingTree.RoutingTree -> Application
+routingTree (RoutingTree.RoutingTree segmentParser methodHandlerMap) = refineSegmentOr onNoSegment onSegment where
+  onSegment = segmentParser >>> \ case
+    Left Nothing -> Left Response.notFound
+    Left (Just err) -> Left (Response.plainBadRequest err)
+    Right nestedTree -> Right (routingTree nestedTree)
+  onNoSegment = routingTreeMethodHandlerMap methodHandlerMap
+
+routingTreeMethodHandlerMap :: RoutingTree.MethodHandlerMap -> Application
+routingTreeMethodHandlerMap methodHandlerMap request =
+  case Map.lookup (requestMethod request) methodHandlerMap of
+    Just handler -> routingTreeHandler handler request
+    Nothing -> apply Response.methodNotAllowed
+
+routingTreeHandler :: RoutingTree.Handler -> Application
+routingTreeHandler handler request respond = do
+  requestBody <- strictRequestBody request
+  response <- handler contentType accept (LazyByteString.toStrict requestBody)
+  respond response
+  where
+    headers = requestHeaders request
+    contentType = lookup "content-type" headers
+    accept = lookup "accept" headers
