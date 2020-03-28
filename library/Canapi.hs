@@ -108,6 +108,45 @@ resourceNodeRoutingTree env params = \ case
         bimap (Just . fromString) (\ segment ->
           resourceNodeListRoutingTree env (segment, params) subResourceNodeList))
       mempty
+  HandlerResourceNode method (Receiver receiverSpec) (Responder responderSpec) handler ->
+    RoutingTree.RoutingTree (const (Left Nothing)) map
+    where
+      defaultDecoderMaybe = case receiverSpec of
+        (_, a) : _ -> Just a
+        _ -> Nothing
+      defaultEncoderMaybe = case responderSpec of
+        (_, a) : _ -> Just a
+        _ -> Nothing
+      routingHandler encoder decoder input =
+        Fx.runFxHandling @IO
+          (\ case
+            ServerErr err -> return (Left (RoutingTree.ServerErr err))
+            ClientErr err -> return (Left (RoutingTree.ClientErr err)))
+          (Fx.provideAndUse (pure env) (do
+            case decoder input of
+              Left err -> return (Left (RoutingTree.ClientErr err))
+              Right request -> do
+                response <- handler params request
+                Fx.runTotalIO (const (return (Right (encoder response))))))
+      mapMaybe = do
+        defaultDecoder <- defaultDecoderMaybe
+        defaultEncoder <- defaultEncoderMaybe
+        let
+          defaultHandler decoder = routingHandler defaultEncoder decoder
+          acceptHandlerMap decoder =
+            responderSpec &
+            fmap (second (\ encoder ->
+              routingHandler encoder decoder)) &
+            Map.fromListWith RoutingTree.handlerMapUnion &
+            RoutingTree.MapWithDefault (defaultHandler decoder)
+          defaultAcceptHandlerMap = acceptHandlerMap defaultDecoder
+          contentTypeHandlerMap =
+            receiverSpec &
+            fmap (second acceptHandlerMap) &
+            Map.fromListWith RoutingTree.contentTypeHandlerMapUnion &
+            RoutingTree.MapWithDefault defaultAcceptHandlerMap
+          in return (Map.singleton method contentTypeHandlerMap)
+      map = mapMaybe & fromMaybe Map.empty
   _ -> error "TODO"
 
 resourceNodeListRoutingTree :: env -> params -> [ResourceNode env params] -> RoutingTree.RoutingTree
