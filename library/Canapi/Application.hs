@@ -41,12 +41,16 @@ attoparseSegment parser cont =
     )
 
 refineSegment :: (Text -> Either Response Application) -> Application
-refineSegment refiner request = case pathInfo request of
+refineSegment = refineSegmentOr (const (apply Response.notFound))
+
+refineSegmentOr :: Application -> (Text -> Either Response Application) -> Application
+refineSegmentOr alternative refiner request = case pathInfo request of
+  [""] -> alternative request
   segmentsHead : segmentsTail ->
     case refiner segmentsHead of
       Right cont -> cont (request { pathInfo = segmentsTail })
       Left err -> apply err
-  _ -> apply Response.notFound
+  _ -> alternative request
 
 authorizing :: ByteString -> (Text -> Text -> Application) -> Application
 authorizing realm cont request = case requestHeaders request & lookup "authorization" of
