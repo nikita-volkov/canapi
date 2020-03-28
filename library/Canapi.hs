@@ -163,13 +163,13 @@ runReceiver = \ case
 
 runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
 runResponder (Responder spec) acceptHeader contentTypeHeader =
-  (byAccept <|> byContentType <|> byHead)
-  where
-    byAccept = acceptHeader >>= HttpMedia.mapAcceptMedia spec
-    byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia spec
-    byHead = case spec of
-      (_, a) : _ -> Just a
-      _ -> Nothing
+  case acceptHeader of
+    Just acceptHeader -> HttpMedia.mapAcceptMedia spec acceptHeader
+    Nothing -> byContentType <|> byHead where
+      byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia spec
+      byHead = case spec of
+        (_, a) : _ -> Just a
+        _ -> Nothing
 
 
 -- * DSL
