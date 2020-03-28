@@ -47,6 +47,10 @@ instance Monoid RoutingTree where
   mempty = RoutingTree (const (Left Nothing)) Map.empty
   mappend = (<>)
 
+
+-- * Helpers
+-------------------------
+
 methodHandlerMapUnion
   (MapWithDefault defaultAcceptHandlerMap1 contentTypeHandlerMap1)
   (MapWithDefault defaultAcceptHandlerMap2 contentTypeHandlerMap2) =
