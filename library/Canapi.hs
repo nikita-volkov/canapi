@@ -57,7 +57,11 @@ import qualified Data.Map.Strict as Map
 import qualified Control.Foldl as Foldl
 import qualified Canapi.RoutingTree as RoutingTree
 import qualified Fx
+import qualified Canapi.Prelude as Prelude
 
+
+-- * Types
+-------------------------
 
 newtype Resource env params = Resource [ResourceNode env params]
 
@@ -69,7 +73,11 @@ data ResourceNode env params =
   RedirectResourceNode Int (params -> Either Text Text) |
   FileSystemResourceNode FilePath
 
-data Receiver a = Receiver [(HttpMedia.MediaType, ByteString -> Either Text a)]
+data Receiver a =
+  TypedReceiver HttpMedia.MediaType (Map HttpMedia.MediaType (Decoder a)) |
+  UntypedReceiver (Decoder a)
+
+type Decoder a = ByteString -> Either Text a
 
 data Responder a = Responder [(HttpMedia.MediaType, a -> Wai.Response)]
 
@@ -117,46 +125,51 @@ resourceNodeRoutingTree env params = \ case
         bimap (Just . fromString) (\ segment ->
           resourceNodeListRoutingTree env (segment, params) subResourceNodeList))
       mempty
-  HandlerResourceNode method (Receiver receiverSpec) (Responder responderSpec) handler ->
+  HandlerResourceNode method receiver responder handler ->
     RoutingTree.RoutingTree (const (Left Nothing)) map
     where
-      defaultDecoderMaybe = case receiverSpec of
-        (_, a) : _ -> Just a
-        _ -> Nothing
-      defaultEncoderMaybe = case responderSpec of
-        (_, a) : _ -> Just a
-        _ -> Nothing
-      routingHandler encoder decoder input =
-        Fx.runFxHandling @IO
-          (\ case
-            ServerErr err -> return (Left (RoutingTree.ServerErr err))
-            ClientErr err -> return (Left (RoutingTree.ClientErr err)))
-          (Fx.provideAndUse (pure env) (do
-            case decoder input of
-              Left err -> return (Left (RoutingTree.ClientErr err))
-              Right request -> do
-                response <- handler params request
-                Fx.runTotalIO (const (return (Right (encoder response))))))
-      mapMaybe = do
-        defaultDecoder <- defaultDecoderMaybe
-        defaultEncoder <- defaultEncoderMaybe
-        let
-          defaultHandler decoder = routingHandler defaultEncoder decoder
-          acceptHandlerMap decoder =
-            responderSpec &
-            fmap (second (\ encoder ->
-              routingHandler encoder decoder)) &
-            Map.fromListWith RoutingTree.handlerMapUnion &
-            RoutingTree.MapWithDefault (defaultHandler decoder)
-          defaultAcceptHandlerMap = acceptHandlerMap defaultDecoder
-          contentTypeHandlerMap =
-            receiverSpec &
-            fmap (second acceptHandlerMap) &
-            Map.fromListWith RoutingTree.contentTypeHandlerMapUnion &
-            RoutingTree.MapWithDefault defaultAcceptHandlerMap
-          in return (Map.singleton method contentTypeHandlerMap)
-      map = mapMaybe & fromMaybe Map.empty
+      map = Map.fromList [(method, routingHandler)]
+      routingHandler contentType accept input =
+        case runReceiver receiver contentType input of
+          Left earlyResponse -> return earlyResponse
+          Right request -> case runResponder responder accept contentType of
+            Nothing -> return Response.notAcceptable
+            Just encoder ->
+              Fx.runFxHandling @IO
+                (\ case
+                  ServerErr err -> do
+                    Text.hPutStrLn stderr err
+                    return Response.internalServerError
+                  ClientErr err -> return (Response.plainBadRequest err))
+                (Fx.provideAndUse (pure env) (do
+                  response <- handler params request
+                  Fx.runTotalIO (const (return (encoder response)))))
   _ -> error "TODO"
+
+runReceiver :: Receiver a -> Maybe ByteString -> ByteString -> Either Wai.Response a
+runReceiver = \ case
+  TypedReceiver defaultType map -> let
+    mediaAssocList = Map.toList map
+    defaultDecoder =
+      Map.lookup defaultType map &
+      fmap (fmap (first Response.plainBadRequest)) &
+      fromMaybe (const (Left Response.notFound))
+    in \ case
+      Just contentType -> case HttpMedia.mapContentMedia mediaAssocList contentType of
+        Just decoder -> first Response.plainBadRequest . decoder
+        Nothing -> const (Left Response.unsupportedMediaType)
+      Nothing -> defaultDecoder
+  UntypedReceiver decoder -> const (first Response.plainBadRequest . decoder)
+
+runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
+runResponder (Responder spec) acceptHeader contentTypeHeader =
+  (byAccept <|> byContentType <|> byHead)
+  where
+    byAccept = acceptHeader >>= HttpMedia.mapAcceptMedia spec
+    byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia spec
+    byHead = case spec of
+      (_, a) : _ -> Just a
+      _ -> Nothing
 
 
 -- * DSL
@@ -169,10 +182,10 @@ by :: SegmentParser segment -> Resource env (segment, params) -> Resource env pa
 by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser resourceNodeList & pure & Resource
 
 head :: (params -> Fx env Err ()) -> Resource env params
-head handler = HandlerResourceNode "HEAD" mempty mempty (\ params () -> handler params) & pure & Resource
+head handler = HandlerResourceNode "HEAD" (pure ()) mempty (\ params () -> handler params) & pure & Resource
 
 get :: Responder response -> (params -> Fx env Err response) -> Resource env params
-get responder handler = HandlerResourceNode "GET" mempty responder (\ params () -> handler params) & pure & Resource
+get responder handler = HandlerResourceNode "GET" (pure ()) responder (\ params () -> handler params) & pure & Resource
 
 post :: Receiver request -> Responder response -> (params -> request -> Fx env Err response) -> Resource env params
 post receiver responder handler = HandlerResourceNode "POST" receiver responder handler & pure & Resource
@@ -181,7 +194,7 @@ put :: Receiver request -> Responder response -> (params -> request -> Fx env Er
 put receiver responder handler = HandlerResourceNode "PUT" receiver responder handler & pure & Resource
 
 delete :: Responder response -> (params -> Fx env Err response) -> Resource env params
-delete responder handler = HandlerResourceNode "DELETE" mempty responder (\ params () -> handler params) & pure & Resource
+delete responder handler = HandlerResourceNode "DELETE" (pure ()) responder (\ params () -> handler params) & pure & Resource
 
 authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> Resource env (identity, params) -> Resource env params
 authenticated realm handler (Resource resourceNodeList) = AuthenticatedResourceNode realm handler resourceNodeList & pure & Resource
@@ -203,7 +216,7 @@ ofJsonAst aesonParser = ofJsonBytes decoder where
   decoder = first fromString . Aeson.eitherDecodeStrict' >=> aesonParser
 
 ofJsonBytes :: (ByteString -> Either Text request) -> Receiver request
-ofJsonBytes decoder = Receiver (fmap (,decoder) MimeTypeList.json)
+ofJsonBytes decoder = TypedReceiver (Prelude.head MimeTypeList.json) (Map.fromList (fmap (,decoder) MimeTypeList.json))
 
 ofYamlAst :: (Aeson.Value -> Either Text request) -> Receiver request
 ofYamlAst aesonParser = ofYamlBytes decoder where
@@ -212,7 +225,7 @@ ofYamlAst aesonParser = ofYamlBytes decoder where
     aesonParser ast
 
 ofYamlBytes :: (ByteString -> Either Text request) -> Receiver request
-ofYamlBytes decoder = Receiver (fmap (,decoder) MimeTypeList.yaml)
+ofYamlBytes decoder = TypedReceiver (Prelude.head MimeTypeList.yaml) (Map.fromList (fmap (,decoder) MimeTypeList.yaml))
 
 -- ** Responder
 -------------------------
@@ -258,12 +271,25 @@ instance Monoid (SegmentParser a) where
 
 deriving instance Functor Receiver
 
-instance Semigroup (Receiver a) where
-  (<>) (Receiver spec1) (Receiver spec2) = Receiver (spec1 <> spec2)
+instance Applicative Receiver where
+  pure a = UntypedReceiver (const (Right a))
+  (<*>) = \ case
+    UntypedReceiver dec1 -> \ case
+      UntypedReceiver dec2 -> UntypedReceiver (liftA2 (<*>) dec1 dec2)
+      TypedReceiver defType2 map2 -> TypedReceiver defType2 (fmap (liftA2 (<*>) dec1) map2)
+    TypedReceiver defType1 map1 -> \ case
+      UntypedReceiver dec2 -> TypedReceiver defType1 (fmap (\ dec1 -> liftA2 (<*>) dec1 dec2) map1)
+      TypedReceiver defType2 map2 -> TypedReceiver defType1 (Map.intersectionWith intersect map1 map2) where
+        intersect = liftA2 (<*>)
 
-instance Monoid (Receiver a) where
-  mempty = Receiver []
-  mappend = (<>)
+instance Alternative Receiver where
+  empty = UntypedReceiver (const (Left "No decoder"))
+  (<|>) = \ case
+    UntypedReceiver dec1 -> const (UntypedReceiver dec1)
+    TypedReceiver defType1 map1 -> \ case
+      UntypedReceiver dec2 -> UntypedReceiver dec2
+      TypedReceiver defType2 map2 -> TypedReceiver defType1 (Map.unionWith union map1 map2) where
+        union = liftA2 (<!>)
 
 instance Contravariant Responder where
   contramap mapper (Responder spec) = Responder (fmap (second (. mapper)) spec)

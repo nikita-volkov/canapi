@@ -86,39 +86,15 @@ routingTree (RoutingTree.RoutingTree segmentParser methodHandlerMap) = refineSeg
 routingTreeMethodHandlerMap :: RoutingTree.MethodHandlerMap -> Application
 routingTreeMethodHandlerMap methodHandlerMap request =
   case Map.lookup (requestMethod request) methodHandlerMap of
-    Just contentTypeHandlerMap -> routingTreeContentTypeHandlerMap contentTypeHandlerMap request
+    Just handler -> routingTreeHandler handler request
     Nothing -> apply Response.methodNotAllowed
-
-routingTreeContentTypeHandlerMap :: RoutingTree.ContentTypeHandlerMap -> Application
-routingTreeContentTypeHandlerMap (RoutingTree.MapWithDefault defaultAcceptHandlerMap byContentTypeMap) request =
-  case lookup "content-type" (requestHeaders request) of
-    Just contentType -> case HttpMedia.mapContentMedia (Map.toList byContentTypeMap) contentType of
-      Just acceptHandlerMap -> routingTreeAcceptHandlerMap acceptHandlerMap request
-      Nothing -> apply Response.unsupportedMediaType 
-    Nothing -> routingTreeAcceptHandlerMap defaultAcceptHandlerMap request
-
-routingTreeAcceptHandlerMap :: RoutingTree.AcceptHandlerMap -> Application
-routingTreeAcceptHandlerMap (RoutingTree.MapWithDefault defaultHandler byAcceptMap) request =
-  case lookup "accept" (requestHeaders request) of
-    Just accept -> case HttpMedia.mapAcceptMedia byAcceptList accept of
-      Just handler -> routingTreeHandler handler request
-      Nothing -> apply Response.notAcceptable
-    Nothing -> case lookup "content-type" (requestHeaders request) of
-      Just contentType -> case HttpMedia.mapAcceptMedia byAcceptList contentType of
-        Just handler -> routingTreeHandler handler request
-        Nothing -> apply Response.notAcceptable 
-      Nothing -> routingTreeHandler defaultHandler request
-  where
-    byAcceptList = Map.toList byAcceptMap
 
 routingTreeHandler :: RoutingTree.Handler -> Application
 routingTreeHandler handler request respond = do
   requestBody <- strictRequestBody request
-  handling <- handler (LazyByteString.toStrict requestBody)
-  case handling of
-    Left err -> case err of
-      RoutingTree.ServerErr err -> do
-        Text.hPutStrLn stderr err
-        respond Response.internalServerError
-      RoutingTree.ClientErr err -> respond (Response.plainBadRequest err)
-    Right response -> respond response
+  response <- handler contentType accept (LazyByteString.toStrict requestBody)
+  respond response
+  where
+    headers = requestHeaders request
+    contentType = lookup "content-type" headers
+    accept = lookup "accept" headers
