@@ -42,7 +42,11 @@ instance Semigroup RoutingTree where
         Left _ -> segmentParser2 input
         Right routingTree -> Right routingTree
       methodHandlerMap = Map.unionWith methodHandlerMapUnion methodHandlerMap1 methodHandlerMap2
-      
+
+instance Monoid RoutingTree where
+  mempty = RoutingTree (const (Left Nothing)) Map.empty
+  mappend = (<>)
+
 methodHandlerMapUnion
   (MapWithDefault defaultAcceptHandlerMap1 contentTypeHandlerMap1)
   (MapWithDefault defaultAcceptHandlerMap2 contentTypeHandlerMap2) =

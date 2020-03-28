@@ -89,9 +89,18 @@ newtype MediaType = MediaType HttpMedia.MediaType
 
 run :: Resource env () -> Word16 -> Bool -> Fx env err ()
 run resource port cors =
-  Fx.runTotalIO $ \ env -> Warp.run (fromIntegral port) (corsify (resourceApplication env () resource))
+  Fx.runTotalIO $ \ env -> Warp.run (fromIntegral port) (application env)
   where
-    corsify = if cors then Application.corsify else id
+    application env =
+      resourceRoutingTree env () resource &
+      Application.routingTree &
+      if cors then Application.corsify else id
+
+resourceRoutingTree :: env -> params -> Resource env params -> RoutingTree.RoutingTree
+resourceRoutingTree env params (Resource resourceNodeList) = resourceNodeListRoutingTree env params resourceNodeList
+
+resourceNodeListRoutingTree :: env -> params -> [ResourceNode env params] -> RoutingTree.RoutingTree
+resourceNodeListRoutingTree env params = foldMap (resourceNodeRoutingTree env params)
 
 resourceNodeRoutingTree :: env -> params -> ResourceNode env params -> RoutingTree.RoutingTree
 resourceNodeRoutingTree env params = \ case
@@ -148,9 +157,6 @@ resourceNodeRoutingTree env params = \ case
           in return (Map.singleton method contentTypeHandlerMap)
       map = mapMaybe & fromMaybe Map.empty
   _ -> error "TODO"
-
-resourceNodeListRoutingTree :: env -> params -> [ResourceNode env params] -> RoutingTree.RoutingTree
-resourceNodeListRoutingTree = error "TODO"
 
 resourceApplication :: env -> params -> Resource env params -> Wai.Application
 resourceApplication env params (Resource resourceNodeList) =
