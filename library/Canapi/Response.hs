@@ -30,6 +30,9 @@ unauthorized realm = Wai.responseBuilder HttpTypes.status401 headers mempty wher
       ("WWW-Authenticate", "Basic realm=\"" <> realm <> "\"")
     ]
 
+status :: HttpTypes.Status -> Wai.Response
+status status = Wai.responseBuilder status [] mempty
+
 file :: ByteString -> FilePath -> Wai.Response
 file contentType path = Wai.responseFile HttpTypes.status200 headers path Nothing where
   headers = [

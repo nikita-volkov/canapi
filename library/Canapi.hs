@@ -35,6 +35,7 @@ import Canapi.Prelude hiding (delete, get, put, head)
 import Canapi.Data
 import qualified Attoparsec.Data as AttoparsecData
 import qualified Canapi.Application as Application
+import qualified Canapi.HttpStatus as HttpStatus
 import qualified Canapi.MimeTypeList as MimeTypeList
 import qualified Canapi.Prelude as Prelude
 import qualified Canapi.RequestAccessor as RequestAccessor
@@ -132,14 +133,14 @@ resourceNodeRoutingTree env params = \ case
         case runReceiver receiver contentType input of
           Left earlyResponse -> return earlyResponse
           Right request -> case runResponder responder accept contentType of
-            Nothing -> return Response.notAcceptable
-            Just encoder ->
+            Left earlyResponse -> return earlyResponse
+            Right encoder ->
               Fx.runFxHandling @IO
                 (\ case
                   ServerErr err -> do
                     Text.hPutStrLn stderr err
                     return Response.internalServerError
-                  ClientErr err -> return (Response.plainBadRequest err))
+                  ClientErr err -> return ((Response.status . HttpStatus.badRequest) err))
                 (Fx.provideAndUse (pure env) (do
                   response <- handler params request
                   Fx.runTotalIO (const (return (encoder response)))))
@@ -151,24 +152,33 @@ runReceiver = \ case
     mediaAssocList = Map.toList map
     defaultDecoder =
       Map.lookup defaultType map &
-      fmap (fmap (first Response.plainBadRequest)) &
-      fromMaybe (const (Left Response.notFound))
+      fmap (fmap (first (Response.status . HttpStatus.badRequest))) &
+      fromMaybe (const (Left ((Response.status . HttpStatus.internalServerError) "No content decoder")))
     in \ case
       Just contentType -> case HttpMedia.mapContentMedia mediaAssocList contentType of
-        Just decoder -> first Response.plainBadRequest . decoder
-        Nothing -> const (Left Response.unsupportedMediaType)
+        Just decoder -> first (Response.status . HttpStatus.badRequest) . decoder
+        Nothing -> const (Left ((Response.status . HttpStatus.unsupportedMediaType) err)) where
+          err =
+            "Unsupported content-type. Expecting one of the following: " <>
+            fromString (show (fmap fst mediaAssocList))
       Nothing -> defaultDecoder
-  UntypedReceiver decoder -> const (first Response.plainBadRequest . decoder)
+  UntypedReceiver decoder -> const (first (Response.status . HttpStatus.badRequest) . decoder)
 
-runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Maybe (response -> Wai.Response)
+runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Either Wai.Response (response -> Wai.Response)
 runResponder (Responder spec) acceptHeader contentTypeHeader =
-  case acceptHeader of
-    Just acceptHeader -> HttpMedia.mapAcceptMedia spec acceptHeader
-    Nothing -> byContentType <|> byHead where
-      byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia spec
-      byHead = case spec of
-        (_, a) : _ -> Just a
-        _ -> Nothing
+  encoderMaybe & maybe (Left errResponse) Right
+  where
+    errResponse = (Response.status . HttpStatus.notAcceptable) message where
+      message =
+        "Not acceptable. Can only produce content of the following types: " <>
+        fromString (show (fmap fst spec))
+    encoderMaybe = case acceptHeader of
+      Just acceptHeader -> HttpMedia.mapAcceptMedia spec acceptHeader
+      Nothing -> byContentType <|> byHead where
+        byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia spec
+        byHead = case spec of
+          (_, a) : _ -> Just a
+          _ -> Nothing
 
 
 -- * DSL

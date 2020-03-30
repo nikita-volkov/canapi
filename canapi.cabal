@@ -26,6 +26,7 @@ library
     Canapi.Data
     Canapi.HeaderParsing
     Canapi.HttpAuthorizationParsing
+    Canapi.HttpStatus
     Canapi.MimeTypeList
     Canapi.NetworkIp
     Canapi.Prelude

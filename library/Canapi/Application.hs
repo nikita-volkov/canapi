@@ -13,6 +13,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import qualified Data.Text.Encoding as Text
 import qualified Canapi.HttpAuthorizationParsing as HttpAuthorizationParsing
+import qualified Canapi.HttpStatus as HttpStatus
 import qualified Canapi.RequestAccessor as RequestAccessor
 import qualified Canapi.Response as Response
 import qualified Canapi.RoutingTree as RoutingTree
@@ -79,7 +80,7 @@ routingTree :: RoutingTree.RoutingTree -> Application
 routingTree (RoutingTree.RoutingTree segmentParser methodHandlerMap) = refineSegmentOr onNoSegment onSegment where
   onSegment = segmentParser >>> \ case
     Left Nothing -> Left Response.notFound
-    Left (Just err) -> Left (Response.plainBadRequest err)
+    Left (Just err) -> Left ((Response.status . HttpStatus.badRequest) err)
     Right nestedTree -> Right (routingTree nestedTree)
   onNoSegment = routingTreeMethodHandlerMap methodHandlerMap
 
@@ -87,7 +88,11 @@ routingTreeMethodHandlerMap :: RoutingTree.MethodHandlerMap -> Application
 routingTreeMethodHandlerMap methodHandlerMap request =
   case Map.lookup (requestMethod request) methodHandlerMap of
     Just handler -> routingTreeHandler handler request
-    Nothing -> apply Response.methodNotAllowed
+    Nothing -> apply lookupErrResponse
+  where
+    supportedMethodList = Map.toList methodHandlerMap & fmap fst
+    lookupErr = "Method not allowed. Supported methods are: " <> show supportedMethodList
+    lookupErrResponse = Response.status (HttpStatus.methodNotAllowed (fromString lookupErr))
 
 routingTreeHandler :: RoutingTree.Handler -> Application
 routingTreeHandler handler request respond = do
