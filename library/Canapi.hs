@@ -33,31 +33,30 @@ module Canapi (
 
 import Canapi.Prelude hiding (delete, get, put, head)
 import Canapi.Data
-import qualified Canapi.Application as Application
-import qualified Canapi.RequestAccessor as RequestAccessor
-import qualified Canapi.ByType as ByType
-import qualified Canapi.Response as Response
-import qualified Canapi.MimeTypeList as MimeTypeList
-import qualified Network.Wai as Wai
-import qualified Network.Wai.Internal as Wai
-import qualified Network.Wai.Application.Static as WaiStatic
-import qualified WaiAppStatic.Types as WaiStatic
-import qualified Network.Wai.Handler.Warp as Warp
-import qualified Network.HTTP.Types as HttpTypes
-import qualified Network.HTTP.Media as HttpMedia
 import qualified Attoparsec.Data as AttoparsecData
-import qualified Data.ByteString.Lazy as LazyByteString
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
-import qualified Data.Text.Encoding as Text
-import qualified Data.Attoparsec.Text as Attoparsec
-import qualified Data.Aeson as Aeson
-import qualified Data.Yaml as Yaml
-import qualified Data.Map.Strict as Map
-import qualified Control.Foldl as Foldl
-import qualified Canapi.RoutingTree as RoutingTree
-import qualified Fx
+import qualified Canapi.Application as Application
+import qualified Canapi.MimeTypeList as MimeTypeList
 import qualified Canapi.Prelude as Prelude
+import qualified Canapi.RequestAccessor as RequestAccessor
+import qualified Canapi.Response as Response
+import qualified Canapi.RoutingTree as RoutingTree
+import qualified Control.Foldl as Foldl
+import qualified Data.Aeson as Aeson
+import qualified Data.Attoparsec.Text as Attoparsec
+import qualified Data.ByteString.Lazy as LazyByteString
+import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
+import qualified Data.Text.IO as Text
+import qualified Data.Yaml as Yaml
+import qualified Fx
+import qualified Network.HTTP.Media as HttpMedia
+import qualified Network.HTTP.Types as HttpTypes
+import qualified Network.Wai as Wai
+import qualified Network.Wai.Application.Static as WaiStatic
+import qualified Network.Wai.Handler.Warp as Warp
+import qualified Network.Wai.Internal as Wai
+import qualified WaiAppStatic.Types as WaiStatic
 
 
 -- * Types
