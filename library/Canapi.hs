@@ -26,6 +26,7 @@ module Canapi (
     ofYamlAst,
     ofYamlBytes,
     -- * Responder
+    asAny,
     asJson,
     asYaml,
     asFile,
@@ -45,6 +46,7 @@ import qualified Control.Foldl as Foldl
 import qualified Data.Aeson as Aeson
 import qualified Data.Attoparsec.Text as Attoparsec
 import qualified Data.ByteString.Lazy as LazyByteString
+import qualified Data.ByteString.Builder
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
@@ -79,7 +81,12 @@ data Receiver a =
 
 type Decoder a = ByteString -> Either Text a
 
-data Responder a = Responder [(HttpMedia.MediaType, a -> Wai.Response)]
+data Responder a =
+  TypedResponder HttpMedia.MediaType (Map HttpMedia.MediaType (Encoder a)) |
+  UntypedResponder (Encoder a) |
+  EmptyResponder
+
+type Encoder a = a -> Wai.Response
 
 data SegmentParser a = SegmentParser [Text] (Attoparsec.Parser a)
 
@@ -165,20 +172,21 @@ runReceiver = \ case
   UntypedReceiver decoder -> const (first (Response.status . HttpStatus.badRequest) . decoder)
 
 runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Either Wai.Response (response -> Wai.Response)
-runResponder (Responder spec) acceptHeader contentTypeHeader =
-  encoderMaybe & maybe (Left errResponse) Right
-  where
+runResponder = \ case
+  TypedResponder defaultType encoderMap -> \ acceptHeader contentTypeHeader -> let
+    encoderAssocList = Map.toList encoderMap
     errResponse = (Response.status . HttpStatus.notAcceptable) message where
       message =
         "Not acceptable. Can only produce content of the following types: " <>
-        fromString (show (fmap fst spec))
+        fromString (show (fmap fst encoderAssocList))
     encoderMaybe = case acceptHeader of
-      Just acceptHeader -> HttpMedia.mapAcceptMedia spec acceptHeader
-      Nothing -> byContentType <|> byHead where
-        byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia spec
-        byHead = case spec of
-          (_, a) : _ -> Just a
-          _ -> Nothing
+      Just acceptHeader -> HttpMedia.mapAcceptMedia encoderAssocList acceptHeader
+      Nothing -> byContentType <|> byDefault where
+        byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia encoderAssocList
+        byDefault = Map.lookup defaultType encoderMap
+    in encoderMaybe & maybe (Left errResponse) Right
+  UntypedResponder encoder -> const (const (Right encoder))
+  EmptyResponder -> const (const (Left (Response.status (HttpStatus.internalServerError "No encoder"))))
 
 
 -- * DSL
@@ -191,7 +199,7 @@ by :: SegmentParser segment -> Resource env (segment, params) -> Resource env pa
 by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser resourceNodeList & pure & Resource
 
 head :: (params -> Fx env Err ()) -> Resource env params
-head handler = HandlerResourceNode "HEAD" (pure ()) mempty (\ params () -> handler params) & pure & Resource
+head handler = HandlerResourceNode "HEAD" (pure ()) asAny (\ params () -> handler params) & pure & Resource
 
 get :: Responder response -> (params -> Fx env Err response) -> Resource env params
 get responder handler = HandlerResourceNode "GET" (pure ()) responder (\ params () -> handler params) & pure & Resource
@@ -239,16 +247,23 @@ ofYamlBytes decoder = TypedReceiver (Prelude.head MimeTypeList.yaml) (Map.fromLi
 -- ** Responder
 -------------------------
 
+asAny :: Responder ()
+asAny = UntypedResponder (const (Response.status (HttpStatus.ok "")))
+
+asOkay :: [HttpMedia.MediaType] -> (a -> Data.ByteString.Builder.Builder) -> Responder a
+asOkay typeList encoder = TypedResponder defaultType (Map.fromList (fmap (,responseFn) typeList)) where
+  responseFn = Response.ok (HttpMedia.renderHeader defaultType) . encoder
+  defaultType = Prelude.head typeList
+
 asJson :: Responder Aeson.Value
-asJson = Responder (fmap (,responseFn) MimeTypeList.json) where
-  responseFn response = Response.ok "application/json" (Aeson.fromEncoding (Aeson.toEncoding response))
+asJson = asOkay MimeTypeList.json (Aeson.fromEncoding . Aeson.toEncoding)
 
 asYaml :: Responder Aeson.Value
-asYaml = Responder (fmap (,responseFn) MimeTypeList.yaml) where
-  responseFn response = Response.ok "application/yaml" (Aeson.fromEncoding (Aeson.toEncoding response))
+asYaml = asOkay MimeTypeList.yaml (Data.ByteString.Builder.byteString . Yaml.encode)
 
 asFile :: MediaType -> Responder FilePath
-asFile (MediaType contentType) = Responder [(contentType, Response.file (HttpMedia.renderHeader contentType))]
+asFile (MediaType mediaType) = TypedResponder mediaType (Map.singleton mediaType encoder) where
+  encoder = Response.file (HttpMedia.renderHeader mediaType)
 
 
 -- * Instances
@@ -301,13 +316,22 @@ instance Alternative Receiver where
         union = liftA2 (<!>)
 
 instance Contravariant Responder where
-  contramap mapper (Responder spec) = Responder (fmap (second (. mapper)) spec)
+  contramap mapper = \ case
+    TypedResponder defaultType encoderMap -> TypedResponder defaultType (fmap (lmap mapper) encoderMap)
+    UntypedResponder encoder -> UntypedResponder (encoder . mapper)
+    EmptyResponder -> EmptyResponder
 
 instance Semigroup (Responder a) where
-  (<>) (Responder spec1) (Responder spec2) = Responder (spec1 <> spec2)
+  (<>) = \ case
+    UntypedResponder enc1 -> const (UntypedResponder enc1)
+    TypedResponder defType1 map1 -> \ case
+      UntypedResponder enc2 -> UntypedResponder enc2
+      TypedResponder defType2 map2 -> TypedResponder defType1 (Map.union map1 map2)
+      EmptyResponder -> TypedResponder defType1 map1
+    EmptyResponder -> id
 
 instance Monoid (Responder a) where
-  mempty = Responder []
+  mempty = EmptyResponder
   mappend = (<>)
 
 instance IsString Realm where
