@@ -29,6 +29,8 @@ module Canapi (
     asAny,
     asJson,
     asYaml,
+    asHtml,
+    asXhtml,
     asFile,
   ) where
 
@@ -260,6 +262,12 @@ asJson = asOkay MimeTypeList.json (Aeson.fromEncoding . Aeson.toEncoding)
 
 asYaml :: Responder Aeson.Value
 asYaml = asOkay MimeTypeList.yaml (Data.ByteString.Builder.byteString . Yaml.encode)
+
+asHtml :: (a -> Data.ByteString.Builder.Builder) -> Responder a
+asHtml = asOkay MimeTypeList.html
+
+asXhtml :: (a -> Data.ByteString.Builder.Builder) -> Responder a
+asXhtml = asOkay MimeTypeList.xhtml
 
 asFile :: MediaType -> Responder FilePath
 asFile (MediaType mediaType) = TypedResponder mediaType (Map.singleton mediaType encoder) where
