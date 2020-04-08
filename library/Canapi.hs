@@ -276,6 +276,11 @@ deriving instance Semigroup (Resource env params)
 
 deriving instance Monoid (Resource env params)
 
+instance IsList (Resource env params) where
+  type Item (Resource env params) = Resource env params
+  fromList = mconcat
+  toList (Resource list) = fmap (Resource . pure) list
+
 instance Contravariant (ResourceNode env) where
   contramap fn = \ case
     AtResourceNode segment nodeList -> AtResourceNode segment (fmap (contramap fn) nodeList)
