@@ -42,7 +42,7 @@ library
     attoparsec-data >=1.0.4.1 && <1.1,
     base >=4.10 && <5,
     base64-bytestring ==1.*,
-    bytestring >=0.10.8 && <0.11,
+    bytestring >=0.10.8 && <0.12,
     case-insensitive >=1.2.1 && <2,
     cereal >=0.5.8.1 && <0.6,
     coalmine,
