@@ -1,6 +1,7 @@
 module Canapi.Prelude
 ( 
   module Exports,
+  apply,
 )
 where
 
@@ -10,7 +11,7 @@ import System.IO as Exports
 
 -- coalmine
 -------------------------
-import Coalmine.Prelude as Exports hiding ((<.), (.>))
+import Coalmine.Prelude as Exports hiding (Fold, only, at)
 
 -- bytestring
 -------------------------
@@ -63,10 +64,5 @@ import Data.Hashable as Exports (Hashable)
 -------------------------
 import Fx as Exports (Fx)
 
--- contravariant
--------------------------
-import Data.Functor.Contravariant.Divisible as Exports
 
--- flow
--------------------------
-import Flow as Exports
+apply = flip ($)
