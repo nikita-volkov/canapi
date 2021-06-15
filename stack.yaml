@@ -1,1 +1,8 @@
-resolver: https://raw.githubusercontent.com/nikita-volkov/stack-snapshot/7b6a9ddab931d9cef087ecdd9c2390ad9b7fb2f4/snapshot.yaml
+resolver: lts-17.15
+extra-deps:
+  - attoparsec-data-1.0.5.1
+  - attoparsec-time-1.0.1.1
+  - git: https://github.com/nikita-volkov/coalmine
+    commit: 3046fac7e59f869ce80a4aef51ac7ee62f19ba9b
+  - git: https://github.com/nikita-volkov/fx
+    commit: a612390cf54c37150c367324b154170921b98318

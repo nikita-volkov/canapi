@@ -326,7 +326,9 @@ instance Alternative Receiver where
     TypedReceiver defType1 map1 -> \ case
       UntypedReceiver dec2 -> UntypedReceiver dec2
       TypedReceiver defType2 map2 -> TypedReceiver defType1 (Map.unionWith union map1 map2) where
-        union = liftA2 (<!>)
+        union l r i = case l i of
+          Left _ -> r i
+          a -> a
 
 instance Contravariant Responder where
   contramap mapper = \ case

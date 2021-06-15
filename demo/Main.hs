@@ -1,8 +1,12 @@
-module Demo where
+module Main where
 
-import Canapi.Prelude hiding (delete, get, put, head)
+import Prelude hiding (delete, get, put, head)
+import Main.HCurrying
 import Canapi
+import Fx
 
+
+main = error "TODO"
 
 data Env
 
