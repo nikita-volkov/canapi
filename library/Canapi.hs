@@ -2,7 +2,7 @@ module Canapi (
     Resource,
     SegmentParser,
     Receiver,
-    Responder,
+    Renderer,
     Realm,
     MediaType,
     Err(..),
@@ -25,7 +25,7 @@ module Canapi (
     ofJsonBytes,
     ofYamlAst,
     ofYamlBytes,
-    -- * Responder
+    -- * Renderer
     asAny,
     asJson,
     asYaml,
@@ -73,7 +73,7 @@ data ResourceNode env params =
   AtResourceNode Text [ResourceNode env params] |
   forall segment. ByResourceNode (SegmentParser segment) [ResourceNode env (segment, params)] |
   forall identity. AuthenticatedResourceNode Realm (Text -> Text -> Fx env Err (Maybe identity)) [ResourceNode env (identity, params)] |
-  forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Responder response) (params -> request -> Fx env Err response) |
+  forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Renderer response) (params -> request -> Fx env Err response) |
   RedirectResourceNode Int (params -> Either Text Text) |
   FileSystemResourceNode FilePath
 
@@ -83,10 +83,18 @@ data Receiver a =
 
 type Decoder a = ByteString -> Either Text a
 
-data Responder a =
-  TypedResponder HttpMedia.MediaType (Map HttpMedia.MediaType (Encoder a)) |
-  UntypedResponder (Encoder a) |
-  EmptyResponder
+{-|
+Renderer of response.
+
+Automates the choice of different renderers depending on the requested type.
+When the requested type is not supported, downgrades to the Canapi default handler.
+
+Therefore it is advised to have your own default handler appended to all your renderers.
+-}
+data Renderer a =
+  TypedRenderer HttpMedia.MediaType (Map HttpMedia.MediaType (Encoder a)) |
+  UntypedRenderer (Encoder a) |
+  EmptyRenderer
 
 type Encoder a = a -> Wai.Response
 
@@ -134,14 +142,14 @@ resourceNodeRoutingTree env params = \ case
         bimap (Just . fromString) (\ segment ->
           resourceNodeListRoutingTree env (segment, params) subResourceNodeList))
       mempty
-  HandlerResourceNode method receiver responder handler ->
+  HandlerResourceNode method receiver renderer handler ->
     RoutingTree.RoutingTree (const (Left Nothing)) map
     where
       map = Map.fromList [(method, routingHandler)]
       routingHandler contentType accept input =
         case runReceiver receiver contentType input of
           Left earlyResponse -> return earlyResponse
-          Right request -> case runResponder responder accept contentType of
+          Right request -> case runRenderer renderer accept contentType of
             Left earlyResponse -> return earlyResponse
             Right encoder ->
               Fx.runFxHandling @IO
@@ -173,9 +181,9 @@ runReceiver = \ case
       Nothing -> defaultDecoder
   UntypedReceiver decoder -> const (first (Response.status . HttpStatus.badRequest) . decoder)
 
-runResponder :: Responder response -> Maybe ByteString -> Maybe ByteString -> Either Wai.Response (response -> Wai.Response)
-runResponder = \ case
-  TypedResponder defaultType encoderMap -> \ acceptHeader contentTypeHeader -> let
+runRenderer :: Renderer response -> Maybe ByteString -> Maybe ByteString -> Either Wai.Response (response -> Wai.Response)
+runRenderer = \ case
+  TypedRenderer defaultType encoderMap -> \ acceptHeader contentTypeHeader -> let
     encoderAssocList = Map.toList encoderMap
     errResponse = (Response.status . HttpStatus.notAcceptable) message where
       message =
@@ -187,8 +195,8 @@ runResponder = \ case
         byContentType = contentTypeHeader >>= HttpMedia.mapContentMedia encoderAssocList
         byDefault = Map.lookup defaultType encoderMap
     in encoderMaybe & maybe (Left errResponse) Right
-  UntypedResponder encoder -> const (const (Right encoder))
-  EmptyResponder -> const (const (Left (Response.status (HttpStatus.internalServerError "No encoder"))))
+  UntypedRenderer encoder -> const (const (Right encoder))
+  EmptyRenderer -> const (const (Left (Response.status (HttpStatus.internalServerError "No encoder"))))
 
 
 -- * DSL
@@ -203,17 +211,17 @@ by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser reso
 head :: (params -> Fx env Err ()) -> Resource env params
 head handler = HandlerResourceNode "HEAD" (pure ()) asAny (\ params () -> handler params) & pure & Resource
 
-get :: Responder response -> (params -> Fx env Err response) -> Resource env params
-get responder handler = HandlerResourceNode "GET" (pure ()) responder (\ params () -> handler params) & pure & Resource
+get :: Renderer response -> (params -> Fx env Err response) -> Resource env params
+get renderer handler = HandlerResourceNode "GET" (pure ()) renderer (\ params () -> handler params) & pure & Resource
 
-post :: Receiver request -> Responder response -> (params -> request -> Fx env Err response) -> Resource env params
-post receiver responder handler = HandlerResourceNode "POST" receiver responder handler & pure & Resource
+post :: Receiver request -> Renderer response -> (params -> request -> Fx env Err response) -> Resource env params
+post receiver renderer handler = HandlerResourceNode "POST" receiver renderer handler & pure & Resource
 
-put :: Receiver request -> Responder response -> (params -> request -> Fx env Err response) -> Resource env params
-put receiver responder handler = HandlerResourceNode "PUT" receiver responder handler & pure & Resource
+put :: Receiver request -> Renderer response -> (params -> request -> Fx env Err response) -> Resource env params
+put receiver renderer handler = HandlerResourceNode "PUT" receiver renderer handler & pure & Resource
 
-delete :: Responder response -> (params -> Fx env Err response) -> Resource env params
-delete responder handler = HandlerResourceNode "DELETE" (pure ()) responder (\ params () -> handler params) & pure & Resource
+delete :: Renderer response -> (params -> Fx env Err response) -> Resource env params
+delete renderer handler = HandlerResourceNode "DELETE" (pure ()) renderer (\ params () -> handler params) & pure & Resource
 
 authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> Resource env (identity, params) -> Resource env params
 authenticated realm handler (Resource resourceNodeList) = AuthenticatedResourceNode realm handler resourceNodeList & pure & Resource
@@ -246,31 +254,31 @@ ofYamlAst aesonParser = ofYamlBytes decoder where
 ofYamlBytes :: (ByteString -> Either Text request) -> Receiver request
 ofYamlBytes decoder = TypedReceiver (Prelude.head MimeTypeList.yaml) (Map.fromList (fmap (,decoder) MimeTypeList.yaml))
 
--- ** Responder
+-- ** Renderer
 -------------------------
 
-asAny :: Responder ()
-asAny = UntypedResponder (const (Response.status (HttpStatus.ok "")))
+asAny :: Renderer ()
+asAny = UntypedRenderer (const (Response.status (HttpStatus.ok "")))
 
-asOkay :: [HttpMedia.MediaType] -> (a -> Data.ByteString.Builder.Builder) -> Responder a
-asOkay typeList encoder = TypedResponder defaultType (Map.fromList (fmap (,responseFn) typeList)) where
+asOkay :: [HttpMedia.MediaType] -> (a -> Data.ByteString.Builder.Builder) -> Renderer a
+asOkay typeList encoder = TypedRenderer defaultType (Map.fromList (fmap (,responseFn) typeList)) where
   responseFn = Response.ok (HttpMedia.renderHeader defaultType) . encoder
   defaultType = Prelude.head typeList
 
-asJson :: Responder Aeson.Value
+asJson :: Renderer Aeson.Value
 asJson = asOkay MimeTypeList.json (Aeson.fromEncoding . Aeson.toEncoding)
 
-asYaml :: Responder Aeson.Value
+asYaml :: Renderer Aeson.Value
 asYaml = asOkay MimeTypeList.yaml (Data.ByteString.Builder.byteString . Yaml.encode)
 
-asHtml :: (a -> Data.ByteString.Builder.Builder) -> Responder a
+asHtml :: (a -> Data.ByteString.Builder.Builder) -> Renderer a
 asHtml = asOkay MimeTypeList.html
 
-asXhtml :: (a -> Data.ByteString.Builder.Builder) -> Responder a
+asXhtml :: (a -> Data.ByteString.Builder.Builder) -> Renderer a
 asXhtml = asOkay MimeTypeList.xhtml
 
-asFile :: MediaType -> Responder FilePath
-asFile (MediaType mediaType) = TypedResponder mediaType (Map.singleton mediaType encoder) where
+asFile :: MediaType -> Renderer FilePath
+asFile (MediaType mediaType) = TypedRenderer mediaType (Map.singleton mediaType encoder) where
   encoder = Response.file (HttpMedia.renderHeader mediaType)
 
 
@@ -293,7 +301,7 @@ instance Contravariant (ResourceNode env) where
   contramap fn = \ case
     AtResourceNode segment nodeList -> AtResourceNode segment (fmap (contramap fn) nodeList)
     ByResourceNode parser nodeList -> ByResourceNode parser (fmap (contramap (second fn)) nodeList)
-    HandlerResourceNode method receiver responder handler -> HandlerResourceNode method receiver responder (handler . fn)
+    HandlerResourceNode method receiver renderer handler -> HandlerResourceNode method receiver renderer (handler . fn)
     _ -> error "TODO"
 
 deriving instance Functor SegmentParser
@@ -330,23 +338,23 @@ instance Alternative Receiver where
           Left _ -> r i
           a -> a
 
-instance Contravariant Responder where
+instance Contravariant Renderer where
   contramap mapper = \ case
-    TypedResponder defaultType encoderMap -> TypedResponder defaultType (fmap (lmap mapper) encoderMap)
-    UntypedResponder encoder -> UntypedResponder (encoder . mapper)
-    EmptyResponder -> EmptyResponder
+    TypedRenderer defaultType encoderMap -> TypedRenderer defaultType (fmap (lmap mapper) encoderMap)
+    UntypedRenderer encoder -> UntypedRenderer (encoder . mapper)
+    EmptyRenderer -> EmptyRenderer
 
-instance Semigroup (Responder a) where
+instance Semigroup (Renderer a) where
   (<>) = \ case
-    UntypedResponder enc1 -> const (UntypedResponder enc1)
-    TypedResponder defType1 map1 -> \ case
-      UntypedResponder enc2 -> UntypedResponder enc2
-      TypedResponder defType2 map2 -> TypedResponder defType1 (Map.union map1 map2)
-      EmptyResponder -> TypedResponder defType1 map1
-    EmptyResponder -> id
+    UntypedRenderer enc1 -> const (UntypedRenderer enc1)
+    TypedRenderer defType1 map1 -> \ case
+      UntypedRenderer enc2 -> UntypedRenderer enc2
+      TypedRenderer defType2 map2 -> TypedRenderer defType1 (Map.union map1 map2)
+      EmptyRenderer -> TypedRenderer defType1 map1
+    EmptyRenderer -> id
 
-instance Monoid (Responder a) where
-  mempty = EmptyResponder
+instance Monoid (Renderer a) where
+  mempty = EmptyRenderer
   mappend = (<>)
 
 instance IsString Realm where

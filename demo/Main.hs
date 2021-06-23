@@ -27,7 +27,7 @@ root = mconcat [
           at "artifacts" (mconcat [
             get (error "TODO") (error "TODO"),
             by languageSegmentParser (mconcat [
-              get artifactsResponder (uncurryH getLanguageArtifacts)
+              get artifactsRenderer (uncurryH getLanguageArtifacts)
             ])
           ])
         ])
@@ -44,8 +44,8 @@ languageSegmentParser = error "TODO"
 validatedRpcSchemaSourceReceiver :: Receiver ByteString
 validatedRpcSchemaSourceReceiver = error "TODO"
 
-artifactsResponder :: Responder Artifacts
-artifactsResponder = error "TODO"
+artifactsRenderer :: Renderer Artifacts
+artifactsRenderer = error "TODO"
 
 putRpcSchemaHandler :: Name -> Name -> ByteString -> Fx env Err ()
 putRpcSchemaHandler = error "TODO"
