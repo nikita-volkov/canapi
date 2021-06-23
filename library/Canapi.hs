@@ -1,6 +1,7 @@
 module Canapi (
     Resource,
     SegmentParser,
+    CookiesParser,
     Receiver,
     Renderer,
     Realm,
@@ -18,6 +19,7 @@ module Canapi (
     delete,
     authenticated,
     temporaryRedirect,
+    withCookies,
     -- * SegmentParser
     segment,
     -- * Receiver
@@ -76,6 +78,8 @@ data ResourceNode env params =
   forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Renderer response) (request -> params -> Fx env Err response) |
   RedirectResourceNode Int (params -> Either Text Text) |
   FileSystemResourceNode FilePath
+
+data CookiesParser cookies
 
 data Receiver a =
   TypedReceiver HttpMedia.MediaType (Map HttpMedia.MediaType (Decoder a)) |
@@ -201,6 +205,10 @@ runRenderer = \ case
 
 -- * DSL
 -------------------------
+
+withCookies :: CookiesParser cookies -> Resource env (cookies, params) -> Resource env params
+withCookies =
+  error "TODO"
 
 at :: Text -> Resource env params -> Resource env params
 at segment (Resource resourceNodeList) = AtResourceNode segment resourceNodeList & pure & Resource
