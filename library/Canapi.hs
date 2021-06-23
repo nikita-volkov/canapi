@@ -73,7 +73,7 @@ data ResourceNode env params =
   AtResourceNode Text [ResourceNode env params] |
   forall segment. ByResourceNode (SegmentParser segment) [ResourceNode env (segment, params)] |
   forall identity. AuthenticatedResourceNode Realm (Text -> Text -> Fx env Err (Maybe identity)) [ResourceNode env (identity, params)] |
-  forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Renderer response) (params -> request -> Fx env Err response) |
+  forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Renderer response) (request -> params -> Fx env Err response) |
   RedirectResourceNode Int (params -> Either Text Text) |
   FileSystemResourceNode FilePath
 
@@ -159,7 +159,7 @@ resourceNodeRoutingTree env params = \ case
                     return Response.internalServerError
                   ClientErr err -> return ((Response.status . HttpStatus.badRequest) err))
                 (Fx.provideAndUse (pure env) (do
-                  response <- handler params request
+                  response <- handler request params
                   Fx.runTotalIO (const (return (encoder response)))))
   _ -> error "TODO"
 
@@ -209,19 +209,19 @@ by :: SegmentParser segment -> Resource env (segment, params) -> Resource env pa
 by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser resourceNodeList & pure & Resource
 
 head :: (params -> Fx env Err ()) -> Resource env params
-head handler = HandlerResourceNode "HEAD" (pure ()) asAny (\ params () -> handler params) & pure & Resource
+head handler = HandlerResourceNode "HEAD" (pure ()) asAny (\ () params -> handler params) & pure & Resource
 
 get :: Renderer response -> (params -> Fx env Err response) -> Resource env params
-get renderer handler = HandlerResourceNode "GET" (pure ()) renderer (\ params () -> handler params) & pure & Resource
+get renderer handler = HandlerResourceNode "GET" (pure ()) renderer (\ () params -> handler params) & pure & Resource
 
-post :: Receiver request -> Renderer response -> (params -> request -> Fx env Err response) -> Resource env params
+post :: Receiver request -> Renderer response -> (request -> params -> Fx env Err response) -> Resource env params
 post receiver renderer handler = HandlerResourceNode "POST" receiver renderer handler & pure & Resource
 
-put :: Receiver request -> Renderer response -> (params -> request -> Fx env Err response) -> Resource env params
+put :: Receiver request -> Renderer response -> (request -> params -> Fx env Err response) -> Resource env params
 put receiver renderer handler = HandlerResourceNode "PUT" receiver renderer handler & pure & Resource
 
 delete :: Renderer response -> (params -> Fx env Err response) -> Resource env params
-delete renderer handler = HandlerResourceNode "DELETE" (pure ()) renderer (\ params () -> handler params) & pure & Resource
+delete renderer handler = HandlerResourceNode "DELETE" (pure ()) renderer (\ () params -> handler params) & pure & Resource
 
 authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> Resource env (identity, params) -> Resource env params
 authenticated realm handler (Resource resourceNodeList) = AuthenticatedResourceNode realm handler resourceNodeList & pure & Resource
@@ -301,7 +301,7 @@ instance Contravariant (ResourceNode env) where
   contramap fn = \ case
     AtResourceNode segment nodeList -> AtResourceNode segment (fmap (contramap fn) nodeList)
     ByResourceNode parser nodeList -> ByResourceNode parser (fmap (contramap (second fn)) nodeList)
-    HandlerResourceNode method receiver renderer handler -> HandlerResourceNode method receiver renderer (handler . fn)
+    HandlerResourceNode method receiver renderer handler -> HandlerResourceNode method receiver renderer (\request params -> handler request (fn params))
     _ -> error "TODO"
 
 deriving instance Functor SegmentParser

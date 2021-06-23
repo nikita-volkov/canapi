@@ -22,7 +22,7 @@ root = mconcat [
     at "rpc" (mconcat [
       by nameSegmentParser (mconcat [
         by nameSegmentParser (mconcat [
-          put validatedRpcSchemaSourceReceiver mempty (uncurryH putRpcSchemaHandler),
+          put validatedRpcSchemaSourceReceiver mempty (uncurryH . putRpcSchemaHandler),
           get (error "TODO") (error "TODO"),
           at "artifacts" (mconcat [
             get (error "TODO") (error "TODO"),
@@ -47,7 +47,7 @@ validatedRpcSchemaSourceReceiver = error "TODO"
 artifactsRenderer :: Renderer Artifacts
 artifactsRenderer = error "TODO"
 
-putRpcSchemaHandler :: Name -> Name -> ByteString -> Fx env Err ()
+putRpcSchemaHandler :: ByteString -> Name -> Name -> Fx env Err ()
 putRpcSchemaHandler = error "TODO"
 
 getLanguageArtifacts :: Language -> Name -> Name -> Fx Env Err Artifacts
