@@ -34,6 +34,8 @@ module Canapi (
     asHtml,
     asXhtml,
     asFile,
+    -- * CookiesParser
+    cookieByName,
   ) where
 
 import Canapi.Prelude hiding (delete, get, put, head)
@@ -49,8 +51,10 @@ import qualified Canapi.RoutingTree as RoutingTree
 import qualified Control.Foldl as Foldl
 import qualified Data.Aeson as Aeson
 import qualified Data.Attoparsec.Text as Attoparsec
+import qualified Data.Attoparsec.ByteString as BsAtto
 import qualified Data.ByteString.Lazy as LazyByteString
 import qualified Data.ByteString.Builder
+import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
@@ -79,7 +83,14 @@ data ResourceNode env params =
   RedirectResourceNode Int (params -> Either Text Text) |
   FileSystemResourceNode FilePath
 
-data CookiesParser cookies
+{-|
+Alternation is about lookup.
+The value parser failing gets propagated to the top.
+-}
+newtype CookiesParser cookies =
+  CookiesParser (HashMap ByteString ByteString -> Either Text (Maybe cookies))
+  deriving (Functor, Applicative, Alternative)
+    via (ReaderT (HashMap ByteString ByteString) (MaybeT (Either Text)))
 
 data Receiver a =
   TypedReceiver HttpMedia.MediaType (Map HttpMedia.MediaType (Decoder a)) |
@@ -288,6 +299,16 @@ asXhtml = asOkay MimeTypeList.xhtml
 asFile :: MediaType -> Renderer FilePath
 asFile (MediaType mediaType) = TypedRenderer mediaType (Map.singleton mediaType encoder) where
   encoder = Response.file (HttpMedia.renderHeader mediaType)
+
+
+-- * CookiesParser
+-------------------------
+
+cookieByName :: ByteString -> BsAtto.Parser a -> CookiesParser a
+cookieByName name parser =
+  CookiesParser $ \map -> case HashMap.lookup name map of
+    Just cookieBytes -> BsAtto.parseOnly parser cookieBytes & bimap fromString Just
+    Nothing -> Right Nothing
 
 
 -- * Instances
