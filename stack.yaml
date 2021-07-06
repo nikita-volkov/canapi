@@ -1,7 +1,7 @@
-resolver: lts-17.15
+resolver: nightly-2021-07-04
 extra-deps:
-  - attoparsec-data-1.0.5.1
-  - attoparsec-time-1.0.1.1
+  - attoparsec-data-1.0.5.2
+  - attoparsec-time-1.0.1.2
   - git: https://github.com/nikita-volkov/coalmine
     commit: 3046fac7e59f869ce80a4aef51ac7ee62f19ba9b
   - git: https://github.com/nikita-volkov/fx
