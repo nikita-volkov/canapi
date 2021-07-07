@@ -1,6 +1,5 @@
 module Main.HCurrying where
 
-
 class HCurrying a b | a -> b where
   curryH :: a -> b
   uncurryH :: b -> a

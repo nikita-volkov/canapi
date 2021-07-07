@@ -1,20 +1,18 @@
-module Canapi.NetworkIp
-where
+module Canapi.NetworkIp where
 
 import Canapi.Prelude
 import Network.IP.Addr
 import qualified Network.Socket as Network
 import qualified System.Endian as Cpu
 
-
 sockAddrInetAddr :: Network.SockAddr -> Maybe (InetAddr IP)
-sockAddrInetAddr = \ case
+sockAddrInetAddr = \case
   Network.SockAddrInet a b -> Just (InetAddr (IPv4 (hostAddressIp4 b)) (portNumberInetPort a))
   Network.SockAddrInet6 a _ b _ -> Just (InetAddr (IPv6 (hostAddress6Ip6 b)) (portNumberInetPort a))
   Network.SockAddrUnix _ -> Nothing
 
 sockAddrIP :: Network.SockAddr -> Maybe IP
-sockAddrIP = \ case
+sockAddrIP = \case
   Network.SockAddrInet _ a -> Just (IPv4 (hostAddressIp4 a))
   Network.SockAddrInet6 _ _ a _ -> Just (IPv6 (hostAddress6Ip6 a))
   Network.SockAddrUnix _ -> Nothing
@@ -29,6 +27,6 @@ portNumberInetPort :: Network.PortNumber -> InetPort
 portNumberInetPort = fromIntegral
 
 ipNetAddr :: IP -> NetAddr IP
-ipNetAddr = \ case
+ipNetAddr = \case
   IPv4 a -> fromNetAddr46 (IPv4 (net4Addr a 32))
   IPv6 a -> fromNetAddr46 (IPv6 (net6Addr a 128))

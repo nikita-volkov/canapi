@@ -1,18 +1,10 @@
-{-|
-An intermediate model, which provides for construction of an efficient application.
--}
-module Canapi.RoutingTree
-where
+-- |
+-- An intermediate model, which provides for construction of an efficient application.
+module Canapi.RoutingTree where
 
 import Canapi.Prelude hiding (Handler)
 import qualified Data.Map.Strict as Map
 import qualified Network.Wai as Wai
-import qualified Network.Wai.Middleware.Cors as WaiCors
-import qualified Network.HTTP.Types as HttpTypes
-import qualified Network.HTTP.Media as HttpMedia
-import qualified Canapi.HttpAuthorizationParsing as HttpAuthorizationParsing
-import qualified Canapi.RequestAccessor as RequestAccessor
-
 
 data RoutingTree = RoutingTree SegmentParser MethodHandlerMap
 
@@ -22,8 +14,8 @@ type MethodHandlerMap = Map ByteString Handler
 
 type Handler = Maybe ByteString -> Maybe ByteString -> ByteString -> IO Wai.Response
 
-
 -- * Instances
+
 -------------------------
 
 instance Semigroup RoutingTree where

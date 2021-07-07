@@ -1,12 +1,10 @@
-module Canapi.ByType
-where
+module Canapi.ByType where
 
-import Canapi.Prelude
 import Canapi.Data
+import Canapi.Prelude
 
-
-data ByType a = ByType {
-    text :: a,
+data ByType a = ByType
+  { text :: a,
     html :: a,
     xml :: a,
     json :: a,
@@ -21,7 +19,7 @@ instance Applicative ByType where
   (<*>) (ByType a b c d e f) (ByType g h i j k l) = ByType (a g) (b h) (c i) (d j) (e k) (f l)
 
 get :: Type -> ByType a -> a
-get = \ case
+get = \case
   TextType -> text
   HtmlType -> html
   XmlType -> xml
