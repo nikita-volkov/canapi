@@ -1,8 +1,7 @@
-resolver: nightly-2021-07-04
+resolver: nightly-2021-11-19
 extra-deps:
-  - attoparsec-data-1.0.5.2
-  - attoparsec-time-1.0.1.2
   - git: https://github.com/nikita-volkov/coalmine
-    commit: 3046fac7e59f869ce80a4aef51ac7ee62f19ba9b
+    commit: 8df89ca9453f124b0395b63ae07a36662ec12c0d
   - git: https://github.com/nikita-volkov/fx
     commit: a612390cf54c37150c367324b154170921b98318
+  - aeson-2.0.2.0
