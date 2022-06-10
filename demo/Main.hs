@@ -1,7 +1,6 @@
 module Main where
 
 import Canapi
-import Fx
 import Main.HCurrying
 import Prelude hiding (delete, get, head, put)
 
@@ -15,8 +14,8 @@ data Artifacts
 
 data Name
 
-root :: Resource Env ()
-root =
+root :: Env -> Resource ()
+root env =
   mconcat
     [ at "groups" mempty,
       at
@@ -37,7 +36,7 @@ root =
                                       by
                                         languageSegmentParser
                                         ( mconcat
-                                            [ get artifactsRenderer (uncurryH getLanguageArtifacts)
+                                            [ get artifactsRenderer (uncurryH (getLanguageArtifacts env))
                                             ]
                                         )
                                     ]
@@ -62,8 +61,8 @@ validatedRpcSchemaSourceReceiver = error "TODO"
 artifactsRenderer :: Renderer Artifacts
 artifactsRenderer = error "TODO"
 
-putRpcSchemaHandler :: ByteString -> Name -> Name -> Fx env Err ()
+putRpcSchemaHandler :: ByteString -> Name -> Name -> IO (Either Err ())
 putRpcSchemaHandler = error "TODO"
 
-getLanguageArtifacts :: Language -> Name -> Name -> Fx Env Err Artifacts
+getLanguageArtifacts :: Env -> Language -> Name -> Name -> IO (Either Err Artifacts)
 getLanguageArtifacts = error "TODO"

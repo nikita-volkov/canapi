@@ -60,7 +60,6 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
 import qualified Data.Text.IO as Text
 import qualified Data.Yaml as Yaml
-import qualified Fx
 import qualified Network.HTTP.Media as HttpMedia
 import qualified Network.HTTP.Types as HttpTypes
 import qualified Network.Wai as Wai
@@ -70,13 +69,13 @@ import qualified Network.Wai.Handler.Warp as Warp
 
 -------------------------
 
-newtype Resource env params = Resource [ResourceNode env params]
+newtype Resource params = Resource [ResourceNode params]
 
-data ResourceNode env params
-  = AtResourceNode Text [ResourceNode env params]
-  | forall segment. ByResourceNode (SegmentParser segment) [ResourceNode env (segment, params)]
-  | forall identity. AuthenticatedResourceNode Realm (Text -> Text -> Fx env Err (Maybe identity)) [ResourceNode env (identity, params)]
-  | forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Renderer response) (request -> params -> Fx env Err response)
+data ResourceNode params
+  = AtResourceNode Text [ResourceNode params]
+  | forall segment. ByResourceNode (SegmentParser segment) [ResourceNode (segment, params)]
+  | forall identity. AuthenticatedResourceNode Realm (Text -> Text -> IO (Either Err (Maybe identity))) [ResourceNode (identity, params)]
+  | forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Renderer response) (request -> params -> IO (Either Err response))
   | RedirectResourceNode Int (params -> Either Text Text)
   | FileSystemResourceNode FilePath
 
@@ -123,28 +122,28 @@ newtype MediaType = MediaType HttpMedia.MediaType
 
 -------------------------
 
-run :: Resource env () -> Word16 -> Bool -> Fx env err ()
+run :: Resource () -> Word16 -> Bool -> IO ()
 run resource port cors =
-  Fx.runTotalIO $ \env -> Warp.run (fromIntegral port) (application env)
+  Warp.run (fromIntegral port) application
   where
-    application env =
-      resourceRoutingTree env () resource
+    application =
+      resourceRoutingTree () resource
         & Application.routingTree
         & if cors then Application.corsify else id
 
-resourceRoutingTree :: env -> params -> Resource env params -> RoutingTree.RoutingTree
-resourceRoutingTree env params (Resource resourceNodeList) = resourceNodeListRoutingTree env params resourceNodeList
+resourceRoutingTree :: params -> Resource params -> RoutingTree.RoutingTree
+resourceRoutingTree params (Resource resourceNodeList) = resourceNodeListRoutingTree params resourceNodeList
 
-resourceNodeListRoutingTree :: env -> params -> [ResourceNode env params] -> RoutingTree.RoutingTree
-resourceNodeListRoutingTree env params = foldMap (resourceNodeRoutingTree env params)
+resourceNodeListRoutingTree :: params -> [ResourceNode params] -> RoutingTree.RoutingTree
+resourceNodeListRoutingTree params = foldMap (resourceNodeRoutingTree params)
 
-resourceNodeRoutingTree :: env -> params -> ResourceNode env params -> RoutingTree.RoutingTree
-resourceNodeRoutingTree env params = \case
+resourceNodeRoutingTree :: params -> ResourceNode params -> RoutingTree.RoutingTree
+resourceNodeRoutingTree params = \case
   AtResourceNode segment subResourceNodeList ->
     RoutingTree.RoutingTree
       ( \actualSegment ->
           if segment == actualSegment
-            then Right (resourceNodeListRoutingTree env params subResourceNodeList)
+            then Right (resourceNodeListRoutingTree params subResourceNodeList)
             else Left Nothing
       )
       mempty
@@ -155,7 +154,7 @@ resourceNodeRoutingTree env params = \case
             & bimap
               (Just . fromString)
               ( \segment ->
-                  resourceNodeListRoutingTree env (segment, params) subResourceNodeList
+                  resourceNodeListRoutingTree (segment, params) subResourceNodeList
               )
       )
       mempty
@@ -168,21 +167,15 @@ resourceNodeRoutingTree env params = \case
           Left earlyResponse -> return earlyResponse
           Right request -> case runRenderer renderer accept contentType of
             Left earlyResponse -> return earlyResponse
-            Right encoder ->
-              Fx.runFxHandling @IO
-                ( \case
-                    ServerErr err -> do
-                      Text.hPutStrLn stderr err
-                      return Response.internalServerError
-                    ClientErr err -> return ((Response.status . HttpStatus.badRequest) err)
-                )
-                ( Fx.provideAndUse
-                    (pure env)
-                    ( do
-                        response <- handler request params
-                        Fx.runTotalIO (const (return (encoder response)))
-                    )
-                )
+            Right encoder -> do
+              response <- handler request params
+              case response of
+                Left err -> case err of
+                  ServerErr err -> do
+                    Text.hPutStrLn stderr err
+                    return Response.internalServerError
+                  ClientErr err -> return $ Response.status $ HttpStatus.badRequest $ err
+                Right res -> return $ encoder res
   _ -> error "TODO"
 
 runReceiver :: Receiver a -> Maybe ByteString -> ByteString -> Either Wai.Response a
@@ -227,35 +220,35 @@ runRenderer = \case
 
 -------------------------
 
-withCookies :: CookiesParser cookies -> Resource env (cookies, params) -> Resource env params
+withCookies :: CookiesParser cookies -> Resource (cookies, params) -> Resource params
 withCookies =
   error "TODO"
 
-at :: Text -> Resource env params -> Resource env params
+at :: Text -> Resource params -> Resource params
 at segment (Resource resourceNodeList) = AtResourceNode segment resourceNodeList & pure & Resource
 
-by :: SegmentParser segment -> Resource env (segment, params) -> Resource env params
+by :: SegmentParser segment -> Resource (segment, params) -> Resource params
 by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser resourceNodeList & pure & Resource
 
-head :: (params -> Fx env Err ()) -> Resource env params
+head :: (params -> IO (Either Err ())) -> Resource params
 head handler = HandlerResourceNode "HEAD" (pure ()) asAny (\() params -> handler params) & pure & Resource
 
-get :: Renderer response -> (params -> Fx env Err response) -> Resource env params
+get :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
 get renderer handler = HandlerResourceNode "GET" (pure ()) renderer (\() params -> handler params) & pure & Resource
 
-post :: Receiver request -> Renderer response -> (request -> params -> Fx env Err response) -> Resource env params
+post :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
 post receiver renderer handler = HandlerResourceNode "POST" receiver renderer handler & pure & Resource
 
-put :: Receiver request -> Renderer response -> (request -> params -> Fx env Err response) -> Resource env params
+put :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
 put receiver renderer handler = HandlerResourceNode "PUT" receiver renderer handler & pure & Resource
 
-delete :: Renderer response -> (params -> Fx env Err response) -> Resource env params
+delete :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
 delete renderer handler = HandlerResourceNode "DELETE" (pure ()) renderer (\() params -> handler params) & pure & Resource
 
-authenticated :: Realm -> (Text -> Text -> Fx env Err (Maybe identity)) -> Resource env (identity, params) -> Resource env params
+authenticated :: Realm -> (Text -> Text -> IO (Either Err (Maybe identity))) -> Resource (identity, params) -> Resource params
 authenticated realm handler (Resource resourceNodeList) = AuthenticatedResourceNode realm handler resourceNodeList & pure & Resource
 
-temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource env params
+temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource params
 temporaryRedirect timeout uriBuilder = RedirectResourceNode timeout uriBuilder & pure & Resource
 
 -- ** SegmentParser
@@ -331,19 +324,19 @@ cookieByName name parser =
 
 -------------------------
 
-instance Contravariant (Resource env) where
+instance Contravariant Resource where
   contramap fn (Resource list) = Resource (fmap (contramap fn) list)
 
-deriving instance Semigroup (Resource env params)
+deriving instance Semigroup (Resource params)
 
-deriving instance Monoid (Resource env params)
+deriving instance Monoid (Resource params)
 
-instance IsList (Resource env params) where
-  type Item (Resource env params) = Resource env params
+instance IsList (Resource params) where
+  type Item (Resource params) = Resource params
   fromList = mconcat
   toList (Resource list) = fmap (Resource . pure) list
 
-instance Contravariant (ResourceNode env) where
+instance Contravariant ResourceNode where
   contramap fn = \case
     AtResourceNode segment nodeList -> AtResourceNode segment (fmap (contramap fn) nodeList)
     ByResourceNode parser nodeList -> ByResourceNode parser (fmap (contramap (second fn)) nodeList)

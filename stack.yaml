@@ -1,7 +1,1 @@
-resolver: nightly-2021-11-19
-extra-deps:
-  - git: https://github.com/nikita-volkov/coalmine
-    commit: 8df89ca9453f124b0395b63ae07a36662ec12c0d
-  - git: https://github.com/nikita-volkov/fx
-    commit: a612390cf54c37150c367324b154170921b98318
-  - aeson-2.0.2.0
+resolver: nightly-2022-06-08
