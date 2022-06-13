@@ -1,7 +1,7 @@
 module Canapi
   ( -- * Types
     Resource,
-    SegmentParser,
+    Segment,
     Receiver,
     Renderer,
     Realm,
@@ -30,7 +30,7 @@ module Canapi
     -- ** Redirection
     temporaryRedirect,
 
-    -- * SegmentParser
+    -- * Segment
     segment,
 
     -- * Receiver
@@ -78,7 +78,7 @@ import qualified Network.Wai.Handler.Warp as Warp
 
 data Resource params
   = AtResource Text [Resource params]
-  | forall segment. ByResource (SegmentParser segment) [Resource (segment, params)]
+  | forall segment. ByResource (Segment segment) [Resource (segment, params)]
   | forall identity. AuthenticatedResource Realm (Text -> Text -> IO (Either Err (Maybe identity))) [Resource (identity, params)]
   | forall request response. HandlerResource HttpTypes.Method (Receiver request) (Renderer response) (request -> params -> IO (Either Err response))
   | RedirectResource Int (params -> Either Text Text)
@@ -117,8 +117,8 @@ data Renderer a
 
 type Encoder a = a -> Wai.Response
 
-data SegmentParser a
-  = SegmentParser
+data Segment a
+  = Segment
       [Text]
       -- ^ Format names.
       (Attoparsec.Parser a)
@@ -158,7 +158,7 @@ resourceRoutingTree params = \case
             else Left Nothing
       )
       mempty
-  ByResource (SegmentParser _ segmentParser) subResourceList ->
+  ByResource (Segment _ segmentParser) subResourceList ->
     RoutingTree.RoutingTree
       ( \segment ->
           Attoparsec.parseOnly (segmentParser <* Attoparsec.endOfInput) segment
@@ -238,7 +238,7 @@ withCookies =
 at :: Text -> [Resource params] -> Resource params
 at segment resourceList = AtResource segment resourceList
 
-by :: SegmentParser segment -> [Resource (segment, params)] -> Resource params
+by :: Segment segment -> [Resource (segment, params)] -> Resource params
 by segmentParser resourceList = ByResource segmentParser resourceList
 
 head :: (params -> IO (Either Err ())) -> Resource params
@@ -262,12 +262,12 @@ authenticated realm handler resourceList = AuthenticatedResource realm handler r
 temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource params
 temporaryRedirect timeout uriBuilder = RedirectResource timeout uriBuilder
 
--- ** SegmentParser
+-- ** Segment
 
 -------------------------
 
-segment :: Text -> Attoparsec.Parser segment -> SegmentParser segment
-segment description = SegmentParser [description]
+segment :: Text -> Attoparsec.Parser segment -> Segment segment
+segment description = Segment [description]
 
 -- ** Receiver
 
@@ -361,14 +361,14 @@ instance Contravariant Resource where
     HandlerResource method receiver renderer handler -> HandlerResource method receiver renderer (\request params -> handler request (fn params))
     _ -> error "TODO"
 
-deriving instance Functor SegmentParser
+deriving instance Functor Segment
 
-instance Semigroup (SegmentParser a) where
-  (<>) (SegmentParser details1 parser1) (SegmentParser details2 parser2) =
-    SegmentParser (details1 <> details2) (parser1 <|> parser2)
+instance Semigroup (Segment a) where
+  (<>) (Segment details1 parser1) (Segment details2 parser2) =
+    Segment (details1 <> details2) (parser1 <|> parser2)
 
-instance Monoid (SegmentParser a) where
-  mempty = SegmentParser [] empty
+instance Monoid (Segment a) where
+  mempty = Segment [] empty
   mappend = (<>)
 
 deriving instance Functor Receiver
