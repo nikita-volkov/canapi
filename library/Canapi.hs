@@ -87,7 +87,11 @@ newtype CookiesParser cookies
     via (ReaderT (HashMap ByteString ByteString) (MaybeT (Either Text)))
 
 data Receiver a
-  = TypedReceiver HttpMedia.MediaType (Map HttpMedia.MediaType (Decoder a))
+  = TypedReceiver
+      HttpMedia.MediaType
+      -- ^ Default type. Used when no content-type is provided.
+      (Map HttpMedia.MediaType (Decoder a))
+      -- ^ Map of decoders based on content-type.
   | UntypedReceiver (Decoder a)
 
 type Decoder a = ByteString -> Either Text a
@@ -260,13 +264,18 @@ segment description = SegmentParser [description]
 
 -------------------------
 
+unitTypedReceiver typeList decoder =
+  TypedReceiver
+    (Prelude.head typeList)
+    (Map.fromList (fmap (,decoder) typeList))
+
 ofJsonAst :: (Aeson.Value -> Either Text request) -> Receiver request
 ofJsonAst aesonParser = ofJsonBytes decoder
   where
     decoder = first fromString . Aeson.eitherDecodeStrict' >=> aesonParser
 
 ofJsonBytes :: (ByteString -> Either Text request) -> Receiver request
-ofJsonBytes decoder = TypedReceiver (Prelude.head MimeTypeList.json) (Map.fromList (fmap (,decoder) MimeTypeList.json))
+ofJsonBytes = unitTypedReceiver MimeTypeList.json
 
 ofYamlAst :: (Aeson.Value -> Either Text request) -> Receiver request
 ofYamlAst aesonParser = ofYamlBytes decoder
@@ -276,7 +285,7 @@ ofYamlAst aesonParser = ofYamlBytes decoder
       aesonParser ast
 
 ofYamlBytes :: (ByteString -> Either Text request) -> Receiver request
-ofYamlBytes decoder = TypedReceiver (Prelude.head MimeTypeList.yaml) (Map.fromList (fmap (,decoder) MimeTypeList.yaml))
+ofYamlBytes = unitTypedReceiver MimeTypeList.yaml
 
 -- ** Renderer
 
