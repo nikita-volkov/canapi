@@ -76,15 +76,13 @@ import qualified Network.Wai.Handler.Warp as Warp
 
 -------------------------
 
-newtype Resource params = Resource [ResourceNode params]
-
-data ResourceNode params
-  = AtResourceNode Text [ResourceNode params]
-  | forall segment. ByResourceNode (SegmentParser segment) [ResourceNode (segment, params)]
-  | forall identity. AuthenticatedResourceNode Realm (Text -> Text -> IO (Either Err (Maybe identity))) [ResourceNode (identity, params)]
-  | forall request response. HandlerResourceNode HttpTypes.Method (Receiver request) (Renderer response) (request -> params -> IO (Either Err response))
-  | RedirectResourceNode Int (params -> Either Text Text)
-  | FileSystemResourceNode FilePath
+data Resource params
+  = AtResource Text [Resource params]
+  | forall segment. ByResource (SegmentParser segment) [Resource (segment, params)]
+  | forall identity. AuthenticatedResource Realm (Text -> Text -> IO (Either Err (Maybe identity))) [Resource (identity, params)]
+  | forall request response. HandlerResource HttpTypes.Method (Receiver request) (Renderer response) (request -> params -> IO (Either Err response))
+  | RedirectResource Int (params -> Either Text Text)
+  | FileSystemResource FilePath
 
 -- |
 -- Alternation is about lookup.
@@ -133,43 +131,40 @@ newtype MediaType = MediaType HttpMedia.MediaType
 
 -------------------------
 
-run :: Resource () -> Word16 -> Bool -> IO ()
+run :: [Resource ()] -> Word16 -> Bool -> IO ()
 run resource port cors =
   Warp.run (fromIntegral port) application
   where
     application =
-      resourceRoutingTree () resource
+      resourceListRoutingTree () resource
         & Application.routingTree
         & if cors then Application.corsify else id
 
+resourceListRoutingTree :: params -> [Resource params] -> RoutingTree.RoutingTree
+resourceListRoutingTree params = foldMap (resourceRoutingTree params)
+
 resourceRoutingTree :: params -> Resource params -> RoutingTree.RoutingTree
-resourceRoutingTree params (Resource resourceNodeList) = resourceNodeListRoutingTree params resourceNodeList
-
-resourceNodeListRoutingTree :: params -> [ResourceNode params] -> RoutingTree.RoutingTree
-resourceNodeListRoutingTree params = foldMap (resourceNodeRoutingTree params)
-
-resourceNodeRoutingTree :: params -> ResourceNode params -> RoutingTree.RoutingTree
-resourceNodeRoutingTree params = \case
-  AtResourceNode segment subResourceNodeList ->
+resourceRoutingTree params = \case
+  AtResource segment subResourceList ->
     RoutingTree.RoutingTree
       ( \actualSegment ->
           if segment == actualSegment
-            then Right (resourceNodeListRoutingTree params subResourceNodeList)
+            then Right (resourceListRoutingTree params subResourceList)
             else Left Nothing
       )
       mempty
-  ByResourceNode (SegmentParser _ segmentParser) subResourceNodeList ->
+  ByResource (SegmentParser _ segmentParser) subResourceList ->
     RoutingTree.RoutingTree
       ( \segment ->
           Attoparsec.parseOnly (segmentParser <* Attoparsec.endOfInput) segment
             & bimap
               (Just . fromString)
               ( \segment ->
-                  resourceNodeListRoutingTree (segment, params) subResourceNodeList
+                  resourceListRoutingTree (segment, params) subResourceList
               )
       )
       mempty
-  HandlerResourceNode method receiver renderer handler ->
+  HandlerResource method receiver renderer handler ->
     RoutingTree.RoutingTree (const (Left Nothing)) map
     where
       map = Map.fromList [(method, routingHandler)]
@@ -231,36 +226,36 @@ runRenderer = \case
 
 -------------------------
 
-withCookies :: CookiesParser cookies -> Resource (cookies, params) -> Resource params
+withCookies :: CookiesParser cookies -> [Resource (cookies, params)] -> Resource params
 withCookies =
   error "TODO"
 
-at :: Text -> Resource params -> Resource params
-at segment (Resource resourceNodeList) = AtResourceNode segment resourceNodeList & pure & Resource
+at :: Text -> [Resource params] -> Resource params
+at segment resourceList = AtResource segment resourceList
 
-by :: SegmentParser segment -> Resource (segment, params) -> Resource params
-by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser resourceNodeList & pure & Resource
+by :: SegmentParser segment -> [Resource (segment, params)] -> Resource params
+by segmentParser resourceList = ByResource segmentParser resourceList
 
 head :: (params -> IO (Either Err ())) -> Resource params
-head handler = HandlerResourceNode "HEAD" (pure ()) asAny (\() params -> handler params) & pure & Resource
+head handler = HandlerResource "HEAD" (pure ()) asAny (\() params -> handler params)
 
 get :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
-get renderer handler = HandlerResourceNode "GET" (pure ()) renderer (\() params -> handler params) & pure & Resource
+get renderer handler = HandlerResource "GET" (pure ()) renderer (\() params -> handler params)
 
 post :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
-post receiver renderer handler = HandlerResourceNode "POST" receiver renderer handler & pure & Resource
+post receiver renderer handler = HandlerResource "POST" receiver renderer handler
 
 put :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
-put receiver renderer handler = HandlerResourceNode "PUT" receiver renderer handler & pure & Resource
+put receiver renderer handler = HandlerResource "PUT" receiver renderer handler
 
 delete :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
-delete renderer handler = HandlerResourceNode "DELETE" (pure ()) renderer (\() params -> handler params) & pure & Resource
+delete renderer handler = HandlerResource "DELETE" (pure ()) renderer (\() params -> handler params)
 
-authenticated :: Realm -> (Text -> Text -> IO (Either Err (Maybe identity))) -> Resource (identity, params) -> Resource params
-authenticated realm handler (Resource resourceNodeList) = AuthenticatedResourceNode realm handler resourceNodeList & pure & Resource
+authenticated :: Realm -> (Text -> Text -> IO (Either Err (Maybe identity))) -> [Resource (identity, params)] -> Resource params
+authenticated realm handler resourceList = AuthenticatedResource realm handler resourceList
 
 temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource params
-temporaryRedirect timeout uriBuilder = RedirectResourceNode timeout uriBuilder & pure & Resource
+temporaryRedirect timeout uriBuilder = RedirectResource timeout uriBuilder
 
 -- ** SegmentParser
 
@@ -355,22 +350,10 @@ cookieByName name parser =
 -------------------------
 
 instance Contravariant Resource where
-  contramap fn (Resource list) = Resource (fmap (contramap fn) list)
-
-deriving instance Semigroup (Resource params)
-
-deriving instance Monoid (Resource params)
-
-instance IsList (Resource params) where
-  type Item (Resource params) = Resource params
-  fromList = mconcat
-  toList (Resource list) = fmap (Resource . pure) list
-
-instance Contravariant ResourceNode where
   contramap fn = \case
-    AtResourceNode segment nodeList -> AtResourceNode segment (fmap (contramap fn) nodeList)
-    ByResourceNode parser nodeList -> ByResourceNode parser (fmap (contramap (second fn)) nodeList)
-    HandlerResourceNode method receiver renderer handler -> HandlerResourceNode method receiver renderer (\request params -> handler request (fn params))
+    AtResource segment nodeList -> AtResource segment (fmap (contramap fn) nodeList)
+    ByResource parser nodeList -> ByResource parser (fmap (contramap (second fn)) nodeList)
+    HandlerResource method receiver renderer handler -> HandlerResource method receiver renderer (\request params -> handler request (fn params))
     _ -> error "TODO"
 
 deriving instance Functor SegmentParser
