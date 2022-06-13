@@ -76,8 +76,6 @@ import qualified Network.Wai.Handler.Warp as Warp
 
 -------------------------
 
-newtype Resource params = Resource [ResourceNode params]
-
 data ResourceNode params
   = AtResourceNode Text [ResourceNode params]
   | forall segment. ByResourceNode (SegmentParser segment) [ResourceNode (segment, params)]
@@ -133,17 +131,14 @@ newtype MediaType = MediaType HttpMedia.MediaType
 
 -------------------------
 
-run :: Resource () -> Word16 -> Bool -> IO ()
+run :: [ResourceNode ()] -> Word16 -> Bool -> IO ()
 run resource port cors =
   Warp.run (fromIntegral port) application
   where
     application =
-      resourceRoutingTree () resource
+      resourceNodeListRoutingTree () resource
         & Application.routingTree
         & if cors then Application.corsify else id
-
-resourceRoutingTree :: params -> Resource params -> RoutingTree.RoutingTree
-resourceRoutingTree params (Resource resourceNodeList) = resourceNodeListRoutingTree params resourceNodeList
 
 resourceNodeListRoutingTree :: params -> [ResourceNode params] -> RoutingTree.RoutingTree
 resourceNodeListRoutingTree params = foldMap (resourceNodeRoutingTree params)
@@ -231,36 +226,36 @@ runRenderer = \case
 
 -------------------------
 
-withCookies :: CookiesParser cookies -> Resource (cookies, params) -> Resource params
+withCookies :: CookiesParser cookies -> [ResourceNode (cookies, params)] -> [ResourceNode params]
 withCookies =
   error "TODO"
 
-at :: Text -> Resource params -> Resource params
-at segment (Resource resourceNodeList) = AtResourceNode segment resourceNodeList & pure & Resource
+at :: Text -> [ResourceNode params] -> [ResourceNode params]
+at segment resourceNodeList = AtResourceNode segment resourceNodeList & pure
 
-by :: SegmentParser segment -> Resource (segment, params) -> Resource params
-by segmentParser (Resource resourceNodeList) = ByResourceNode segmentParser resourceNodeList & pure & Resource
+by :: SegmentParser segment -> [ResourceNode (segment, params)] -> [ResourceNode params]
+by segmentParser resourceNodeList = ByResourceNode segmentParser resourceNodeList & pure
 
-head :: (params -> IO (Either Err ())) -> Resource params
-head handler = HandlerResourceNode "HEAD" (pure ()) asAny (\() params -> handler params) & pure & Resource
+head :: (params -> IO (Either Err ())) -> [ResourceNode params]
+head handler = HandlerResourceNode "HEAD" (pure ()) asAny (\() params -> handler params) & pure
 
-get :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
-get renderer handler = HandlerResourceNode "GET" (pure ()) renderer (\() params -> handler params) & pure & Resource
+get :: Renderer response -> (params -> IO (Either Err response)) -> [ResourceNode params]
+get renderer handler = HandlerResourceNode "GET" (pure ()) renderer (\() params -> handler params) & pure
 
-post :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
-post receiver renderer handler = HandlerResourceNode "POST" receiver renderer handler & pure & Resource
+post :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> [ResourceNode params]
+post receiver renderer handler = HandlerResourceNode "POST" receiver renderer handler & pure
 
-put :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
-put receiver renderer handler = HandlerResourceNode "PUT" receiver renderer handler & pure & Resource
+put :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> [ResourceNode params]
+put receiver renderer handler = HandlerResourceNode "PUT" receiver renderer handler & pure
 
-delete :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
-delete renderer handler = HandlerResourceNode "DELETE" (pure ()) renderer (\() params -> handler params) & pure & Resource
+delete :: Renderer response -> (params -> IO (Either Err response)) -> [ResourceNode params]
+delete renderer handler = HandlerResourceNode "DELETE" (pure ()) renderer (\() params -> handler params) & pure
 
-authenticated :: Realm -> (Text -> Text -> IO (Either Err (Maybe identity))) -> Resource (identity, params) -> Resource params
-authenticated realm handler (Resource resourceNodeList) = AuthenticatedResourceNode realm handler resourceNodeList & pure & Resource
+authenticated :: Realm -> (Text -> Text -> IO (Either Err (Maybe identity))) -> [ResourceNode (identity, params)] -> [ResourceNode params]
+authenticated realm handler resourceNodeList = AuthenticatedResourceNode realm handler resourceNodeList & pure
 
-temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource params
-temporaryRedirect timeout uriBuilder = RedirectResourceNode timeout uriBuilder & pure & Resource
+temporaryRedirect :: Int -> (params -> Either Text Text) -> [ResourceNode params]
+temporaryRedirect timeout uriBuilder = RedirectResourceNode timeout uriBuilder & pure
 
 -- ** SegmentParser
 
@@ -353,18 +348,6 @@ cookieByName name parser =
 -- * Instances
 
 -------------------------
-
-instance Contravariant Resource where
-  contramap fn (Resource list) = Resource (fmap (contramap fn) list)
-
-deriving instance Semigroup (Resource params)
-
-deriving instance Monoid (Resource params)
-
-instance IsList (Resource params) where
-  type Item (Resource params) = Resource params
-  fromList = mconcat
-  toList (Resource list) = fmap (Resource . pure) list
 
 instance Contravariant ResourceNode where
   contramap fn = \case
