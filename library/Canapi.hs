@@ -1,7 +1,6 @@
 module Canapi
   ( Resource,
     SegmentParser,
-    CookiesParser,
     Receiver,
     Renderer,
     Realm,
@@ -21,7 +20,6 @@ module Canapi
     delete,
     authenticated,
     temporaryRedirect,
-    withCookies,
 
     -- * SegmentParser
     segment,
