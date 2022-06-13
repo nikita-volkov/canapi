@@ -371,6 +371,16 @@ instance Monoid (Segment a) where
   mempty = Segment [] empty
   mappend = (<>)
 
+instance IsString (Segment ()) where
+  fromString expectedString = Segment [] parser
+    where
+      expectedText = fromString expectedString
+      parser = do
+        text <- Attoparsec.takeText
+        if text == expectedText
+          then return ()
+          else fail "Unexpected input"
+
 deriving instance Functor Receiver
 
 instance Applicative Receiver where
