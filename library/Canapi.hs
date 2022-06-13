@@ -1,5 +1,6 @@
 module Canapi
   ( -- * Types
+    Server,
     Resource,
     Segment,
     Receiver,
@@ -7,6 +8,10 @@ module Canapi
     Realm,
     MediaType,
     Err (..),
+
+    -- * Server
+    startOnFreePort,
+    stop,
 
     -- * Execution
     serve,
@@ -132,6 +137,35 @@ data Err
 newtype Realm = Realm ByteString
 
 newtype MediaType = MediaType HttpMedia.MediaType
+
+-- | Handle to a running server.
+newtype Server = Server
+  { serverDeadLock :: MVar ()
+  }
+
+-- * Server
+
+-------------------------
+
+-- |
+-- Start listening on a free port and return the handle to the server.
+--
+-- This action returns when the server is ready to receive or fails to startup.
+startOnFreePort :: [Resource ()] -> Bool -> IO (Int, Server)
+startOnFreePort resources cors = do
+  portVar <- newEmptyMVar
+  serverDeadLock <- newEmptyMVar
+  Warp.withApplication (pure application) $ \port -> do
+    putMVar portVar port
+    readMVar serverDeadLock
+  port <- takeMVar portVar
+  return (port, Server serverDeadLock)
+  where
+    application = buildApplication resources cors
+
+stop :: Server -> IO ()
+stop Server {..} =
+  void $ tryPutMVar serverDeadLock ()
 
 -- * Execution
 
