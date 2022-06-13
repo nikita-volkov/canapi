@@ -1,5 +1,6 @@
 module Canapi
-  ( Resource,
+  ( -- * Types
+    Resource,
     SegmentParser,
     Receiver,
     Renderer,
@@ -11,14 +12,22 @@ module Canapi
     run,
 
     -- * Resource
+
+    -- ** Segments
     at,
     by,
+
+    -- ** Methods
     head,
     get,
     post,
     put,
     delete,
+
+    -- ** Authentication
     authenticated,
+
+    -- ** Redirection
     temporaryRedirect,
 
     -- * SegmentParser
@@ -39,9 +48,6 @@ module Canapi
     asXhtml,
     asFile,
     asBinary,
-
-    -- * CookiesParser
-    cookieByName,
   )
 where
 
