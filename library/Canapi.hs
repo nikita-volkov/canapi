@@ -136,9 +136,9 @@ newtype MediaType = MediaType HttpMedia.MediaType
 
 -------------------------
 
-run :: [Resource ()] -> Word16 -> Bool -> IO ()
+run :: [Resource ()] -> Int -> Bool -> IO ()
 run resource port cors =
-  Warp.run (fromIntegral port) application
+  Warp.run port application
   where
     application =
       resourceListRoutingTree () resource
