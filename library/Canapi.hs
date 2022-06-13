@@ -117,7 +117,12 @@ data Renderer a
 
 type Encoder a = a -> Wai.Response
 
-data SegmentParser a = SegmentParser [Text] (Attoparsec.Parser a)
+data SegmentParser a
+  = SegmentParser
+      [Text]
+      -- ^ Format names.
+      (Attoparsec.Parser a)
+      -- ^ Parser.
 
 data Err
   = ClientErr Text
