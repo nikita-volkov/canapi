@@ -9,7 +9,8 @@ module Canapi
     Err (..),
 
     -- * Execution
-    run,
+    serve,
+    buildApplication,
 
     -- * Resource
 
@@ -136,14 +137,15 @@ newtype MediaType = MediaType HttpMedia.MediaType
 
 -------------------------
 
-run :: [Resource ()] -> Int -> Bool -> IO ()
-run resource port cors =
-  Warp.run port application
-  where
-    application =
-      resourceListRoutingTree () resource
-        & Application.routingTree
-        & if cors then Application.corsify else id
+serve :: [Resource ()] -> Int -> Bool -> IO ()
+serve resources port cors =
+  Warp.run port (buildApplication resources cors)
+
+buildApplication :: [Resource ()] -> Bool -> Wai.Application
+buildApplication resources cors =
+  resourceListRoutingTree () resources
+    & Application.routingTree
+    & if cors then Application.corsify else id
 
 resourceListRoutingTree :: params -> [Resource params] -> RoutingTree.RoutingTree
 resourceListRoutingTree params = foldMap (resourceRoutingTree params)
