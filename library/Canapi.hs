@@ -29,6 +29,7 @@ module Canapi
     ofJsonBytes,
     ofYamlAst,
     ofYamlBytes,
+    ofBinary,
 
     -- * Renderer
     asAny,
@@ -37,6 +38,7 @@ module Canapi
     asHtml,
     asXhtml,
     asFile,
+    asBinary,
 
     -- * CookiesParser
     cookieByName,
@@ -56,6 +58,7 @@ import qualified Data.Attoparsec.Text as Attoparsec
 import qualified Data.ByteString.Builder
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Strict as Map
+import qualified Data.Serialize as Cereal
 import qualified Data.Text.IO as Text
 import qualified Data.Yaml as Yaml
 import qualified Network.HTTP.Media as HttpMedia
@@ -287,6 +290,16 @@ ofYamlAst aesonParser = ofYamlBytes decoder
 ofYamlBytes :: (ByteString -> Either Text request) -> Receiver request
 ofYamlBytes = unitTypedReceiver MimeTypeList.yaml
 
+ofBinary :: Cereal.Get request -> Receiver request
+ofBinary = unitTypedReceiver MimeTypeList.binary . cerealBinaryDecoder
+
+-- ** Decoder
+
+-------------------------
+
+cerealBinaryDecoder :: Cereal.Get a -> Decoder a
+cerealBinaryDecoder = fmap (first fromString) . Cereal.runGet
+
 -- ** Renderer
 
 -------------------------
@@ -316,6 +329,10 @@ asFile :: MediaType -> Renderer FilePath
 asFile (MediaType mediaType) = TypedRenderer mediaType (Map.singleton mediaType encoder)
   where
     encoder = Response.file (HttpMedia.renderHeader mediaType)
+
+asBinary :: Cereal.Putter a -> Renderer a
+asBinary putter =
+  asOkay MimeTypeList.binary $ Cereal.execPut . putter
 
 -- * CookiesParser
 
