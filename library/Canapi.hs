@@ -226,36 +226,36 @@ runRenderer = \case
 
 -------------------------
 
-withCookies :: CookiesParser cookies -> [Resource (cookies, params)] -> [Resource params]
+withCookies :: CookiesParser cookies -> [Resource (cookies, params)] -> Resource params
 withCookies =
   error "TODO"
 
-at :: Text -> [Resource params] -> [Resource params]
-at segment resourceList = AtResource segment resourceList & pure
+at :: Text -> [Resource params] -> Resource params
+at segment resourceList = AtResource segment resourceList
 
-by :: SegmentParser segment -> [Resource (segment, params)] -> [Resource params]
-by segmentParser resourceList = ByResource segmentParser resourceList & pure
+by :: SegmentParser segment -> [Resource (segment, params)] -> Resource params
+by segmentParser resourceList = ByResource segmentParser resourceList
 
-head :: (params -> IO (Either Err ())) -> [Resource params]
-head handler = HandlerResource "HEAD" (pure ()) asAny (\() params -> handler params) & pure
+head :: (params -> IO (Either Err ())) -> Resource params
+head handler = HandlerResource "HEAD" (pure ()) asAny (\() params -> handler params)
 
-get :: Renderer response -> (params -> IO (Either Err response)) -> [Resource params]
-get renderer handler = HandlerResource "GET" (pure ()) renderer (\() params -> handler params) & pure
+get :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
+get renderer handler = HandlerResource "GET" (pure ()) renderer (\() params -> handler params)
 
-post :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> [Resource params]
-post receiver renderer handler = HandlerResource "POST" receiver renderer handler & pure
+post :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
+post receiver renderer handler = HandlerResource "POST" receiver renderer handler
 
-put :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> [Resource params]
-put receiver renderer handler = HandlerResource "PUT" receiver renderer handler & pure
+put :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
+put receiver renderer handler = HandlerResource "PUT" receiver renderer handler
 
-delete :: Renderer response -> (params -> IO (Either Err response)) -> [Resource params]
-delete renderer handler = HandlerResource "DELETE" (pure ()) renderer (\() params -> handler params) & pure
+delete :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
+delete renderer handler = HandlerResource "DELETE" (pure ()) renderer (\() params -> handler params)
 
-authenticated :: Realm -> (Text -> Text -> IO (Either Err (Maybe identity))) -> [Resource (identity, params)] -> [Resource params]
-authenticated realm handler resourceList = AuthenticatedResource realm handler resourceList & pure
+authenticated :: Realm -> (Text -> Text -> IO (Either Err (Maybe identity))) -> [Resource (identity, params)] -> Resource params
+authenticated realm handler resourceList = AuthenticatedResource realm handler resourceList
 
-temporaryRedirect :: Int -> (params -> Either Text Text) -> [Resource params]
-temporaryRedirect timeout uriBuilder = RedirectResource timeout uriBuilder & pure
+temporaryRedirect :: Int -> (params -> Either Text Text) -> Resource params
+temporaryRedirect timeout uriBuilder = RedirectResource timeout uriBuilder
 
 -- ** SegmentParser
 
