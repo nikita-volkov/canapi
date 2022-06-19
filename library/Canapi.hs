@@ -181,7 +181,7 @@ buildApplication resources cors logging =
   resourceListRoutingTree () resources
     & Application.routingTree
     & (if cors then Application.corsify else id)
-    & (if logging then RequestLogger.logStdoutDev else id)
+    & (if logging then RequestLogger.logStdout else id)
 
 resourceListRoutingTree :: params -> [Resource params] -> RoutingTree.RoutingTree
 resourceListRoutingTree params = foldMap (resourceRoutingTree params)
