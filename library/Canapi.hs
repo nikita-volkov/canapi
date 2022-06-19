@@ -346,7 +346,8 @@ ofBinary = unitTypedReceiver MimeTypeList.binary . cerealBinaryDecoder
 -------------------------
 
 cerealBinaryDecoder :: Cereal.Get a -> Decoder a
-cerealBinaryDecoder = fmap (first fromString) . Cereal.runGet
+cerealBinaryDecoder get =
+  first fromString . Cereal.runGet get . traceShowId
 
 -- ** Renderer
 
