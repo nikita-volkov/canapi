@@ -239,8 +239,12 @@ runReceiver = \case
             Nothing -> const (Left ((Response.status . HttpStatus.unsupportedMediaType) err))
               where
                 err =
-                  "Unsupported content-type. Expecting one of the following: "
-                    <> fromString (show (fmap fst mediaAssocList))
+                  mconcat
+                    [ "Unsupported content-type: ",
+                      fromString (show contentType),
+                      ". Expecting one of the following: ",
+                      fromString (show (fmap fst mediaAssocList))
+                    ]
           Nothing -> defaultDecoder
   UntypedReceiver decoder -> const (first (Response.status . HttpStatus.badRequest) . decoder)
 
