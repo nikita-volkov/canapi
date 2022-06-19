@@ -20,7 +20,12 @@ logRequests app req respond = do
   body <- strictRequestBody req
   hPutStrLn stderr (show (body))
   hFlush stderr
-  app req respond
+  app req respond'
+  where
+    respond' res = do
+      hPutStrLn stderr $ show (responseStatus res, responseHeaders res)
+      hFlush stderr
+      respond res
 
 concat :: [Application] -> Application
 concat = foldl' alternate notFound
