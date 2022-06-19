@@ -77,6 +77,7 @@ import qualified Network.HTTP.Media as HttpMedia
 import qualified Network.HTTP.Types as HttpTypes
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
+import qualified Network.Wai.Middleware.RequestLogger as RequestLogger
 
 -- * Types
 
@@ -151,8 +152,8 @@ newtype Server = Server
 -- Start listening on a free port and return the handle to the server.
 --
 -- This action returns when the server is ready to receive or fails to startup.
-startOnFreePort :: [Resource ()] -> Bool -> IO (Int, Server)
-startOnFreePort resources cors = do
+startOnFreePort :: [Resource ()] -> Bool -> Bool -> IO (Int, Server)
+startOnFreePort resources cors logging = do
   portVar <- newEmptyMVar
   serverDeadLock <- newEmptyMVar
   Warp.withApplication (pure application) $ \port -> do
@@ -161,7 +162,7 @@ startOnFreePort resources cors = do
   port <- takeMVar portVar
   return (port, Server serverDeadLock)
   where
-    application = buildApplication resources cors
+    application = buildApplication resources cors logging
 
 stop :: Server -> IO ()
 stop Server {..} =
@@ -171,15 +172,16 @@ stop Server {..} =
 
 -------------------------
 
-serve :: [Resource ()] -> Int -> Bool -> IO ()
-serve resources port cors =
-  Warp.run port (buildApplication resources cors)
+serve :: [Resource ()] -> Int -> Bool -> Bool -> IO ()
+serve resources port cors logging =
+  Warp.run port (buildApplication resources cors logging)
 
-buildApplication :: [Resource ()] -> Bool -> Wai.Application
-buildApplication resources cors =
+buildApplication :: [Resource ()] -> Bool -> Bool -> Wai.Application
+buildApplication resources cors logging =
   resourceListRoutingTree () resources
     & Application.routingTree
-    & if cors then Application.corsify else id
+    & (if cors then Application.corsify else id)
+    & (if logging then RequestLogger.logStdoutDev else id)
 
 resourceListRoutingTree :: params -> [Resource params] -> RoutingTree.RoutingTree
 resourceListRoutingTree params = foldMap (resourceRoutingTree params)
