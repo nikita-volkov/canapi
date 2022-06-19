@@ -13,6 +13,11 @@ import qualified Network.HTTP.Types as HttpTypes
 import Network.Wai
 import qualified Network.Wai.Middleware.Cors as WaiCors
 
+logRequests :: Application -> Application
+logRequests app req respond = do
+  traceShowM req
+  app req respond
+
 concat :: [Application] -> Application
 concat = foldl' alternate notFound
 
