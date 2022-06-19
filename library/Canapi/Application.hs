@@ -15,7 +15,11 @@ import qualified Network.Wai.Middleware.Cors as WaiCors
 
 logRequests :: Application -> Application
 logRequests app req respond = do
-  traceShowM req
+  hPutStr stderr "DEBUG "
+  hPutStrLn stderr (show req)
+  body <- strictRequestBody req
+  hPutStrLn stderr (show (body))
+  hFlush stderr
   app req respond
 
 concat :: [Application] -> Application
