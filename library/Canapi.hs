@@ -60,7 +60,7 @@ where
 import qualified Canapi.Application as Application
 import qualified Canapi.HttpStatus as HttpStatus
 import qualified Canapi.MimeTypeList as MimeTypeList
-import Canapi.Prelude hiding (delete, head)
+import Canapi.Prelude hiding (Handler, delete, head)
 import qualified Canapi.Prelude as Prelude
 import qualified Canapi.Response as Response
 import qualified Canapi.RoutingTree as RoutingTree
@@ -87,7 +87,7 @@ data Resource params
   = AtResource Text [Resource params]
   | forall segment. ByResource (Segment segment) [Resource (segment, params)]
   | forall identity. AuthenticatedResource Realm (Text -> Text -> IO (Either Err (Maybe identity))) [Resource (identity, params)]
-  | forall request response. HandlerResource HttpTypes.Method (Receiver request) (Renderer response) (request -> params -> IO (Either Err response))
+  | forall request response. HandlerResource HttpTypes.Method (Receiver request) (Renderer response) (request -> Handler params response)
   | RedirectResource Int (params -> Either Text Text)
   | FileSystemResource FilePath
 
@@ -130,6 +130,9 @@ data Segment a
       -- ^ Format names.
       (Attoparsec.Parser a)
       -- ^ Parser.
+
+type Handler params response =
+  params -> IO (Either Err response)
 
 data Err
   = ClientErr Text
@@ -286,16 +289,16 @@ by segmentParser resourceList = ByResource segmentParser resourceList
 head :: (params -> IO (Either Err ())) -> Resource params
 head handler = HandlerResource "HEAD" (pure ()) asAny (\() params -> handler params)
 
-get :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
+get :: Renderer response -> (Handler params response) -> Resource params
 get renderer handler = HandlerResource "GET" (pure ()) renderer (\() params -> handler params)
 
-post :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
+post :: Receiver request -> Renderer response -> (request -> Handler params response) -> Resource params
 post receiver renderer handler = HandlerResource "POST" receiver renderer handler
 
-put :: Receiver request -> Renderer response -> (request -> params -> IO (Either Err response)) -> Resource params
+put :: Receiver request -> Renderer response -> (request -> Handler params response) -> Resource params
 put receiver renderer handler = HandlerResource "PUT" receiver renderer handler
 
-delete :: Renderer response -> (params -> IO (Either Err response)) -> Resource params
+delete :: Renderer response -> (Handler params response) -> Resource params
 delete renderer handler = HandlerResource "DELETE" (pure ()) renderer (\() params -> handler params)
 
 authenticated :: Realm -> (Text -> Text -> IO (Either Err (Maybe identity))) -> [Resource (identity, params)] -> Resource params
