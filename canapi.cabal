@@ -55,7 +55,7 @@ library
     network-ip >=0.3.0.3 && <0.4,
     profunctors >=5.5 && <6,
     unordered-containers >=0.2.10 && <0.3,
-    text >=1.2 && <2,
+    text >=1.2 && <3,
     transformers >=0.5 && <0.6,
     tuple >=0.3.0.2 && <0.4,
     wai >=3.2 && <3.3,
