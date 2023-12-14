@@ -19,7 +19,9 @@ requestMetadata request =
       Just a -> a
       Nothing ->
         error
-          ( "Warp has set an unexpected remoteHost address: " <> show sockAddr <> ". "
+          ( "Warp has set an unexpected remoteHost address: "
+              <> show sockAddr
+              <> ". "
               <> "Please report this to the maintainers of the \"canapi\" package."
           )
     userAgent = fmap Text.decodeLatin1 (Wai.requestHeaderUserAgent request)
