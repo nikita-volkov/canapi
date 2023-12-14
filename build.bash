@@ -1,56 +1,20 @@
 #!/bin/bash
 set -eo pipefail
 
+# # make format tasty-test
+# make format test
+
+
+
 function format {
-  ormolu --mode inplace -ce \
-  $(find . -name "*.hs" \
-    -not -path "./*.stack-work/*" \
-    -not -path "./sketches/*" \
-    -not -path "./.git/*")
+  for path in $(git diff --staged --name-only -- '*.cabal') $(git ls-files -om --exclude-standard -- '*.cabal'); do if test -f $path; then cabal-fmt --no-tabular -c $path 2> /dev/null || cabal-fmt --no-tabular -i $path; fi; done
+  for path in $(git diff --staged --name-only -- '*.hs') $(git ls-files -om --exclude-standard -- '*.hs'); do if test -f $path; then ormolu -ic $path; fi; done
 }
 
-function build_and_test {
-  stack build \
-  --ghc-options "-j +RTS -A128m -n2m -RTS -fwarn-incomplete-patterns" \
-  --test \
-  --fast
-}
+cabal build --enable-tests -j10 --ghc-options="-j10 -Werror -Wall -Wincomplete-uni-patterns -Wincomplete-record-updates -Wredundant-constraints -Wunused-packages -Wno-name-shadowing -Wno-unused-matches -Wno-unused-do-bind -Wno-type-defaults"
 
-function build_and_test_with_doctest {
-  stack build \
-  --ghc-options "-j +RTS -A128m -n2m -RTS -fwarn-incomplete-patterns" \
-  --test \
-  --fast \
-  --flag coalmine:doctest
-}
-
-function build_and_test_by_pattern {
-  stack build \
-  --fast --test \
-  --ghc-options "-j +RTS -A128m -n2m -RTS -fwarn-incomplete-patterns" \
-  --ta "-p \"$1\""
-}
-
-function build {
-  stack build \
-  --ghc-options "-j +RTS -A128m -n2m -RTS -fwarn-incomplete-patterns" \
-  --fast
-}
-
-function fork_haddock {
-  mkdir -p ".haddock.stack-work"
-
-  stack haddock \
-  --work-dir ".haddock.stack-work" \
-  --ghc-options "-j +RTS -A128m -n2m -RTS -fwarn-incomplete-patterns" \
-  --fast \
-  &> .haddock.stack-work/log &
-}
-
-function demo {
-  stack exec demo
-}
+# cabal haddock
 
 format
-fork_haddock
-build_and_test
+
+git add -A

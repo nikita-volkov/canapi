@@ -11,6 +11,7 @@ contentType = mapper HttpMedia.mapContentMedia
 accept :: ByteString -> Maybe Type
 accept = mapper HttpMedia.mapAcceptMedia
 
+mapper :: ([(HttpMedia.MediaType, Type)] -> t) -> t
 mapper fn = fn mappings
   where
     mappings =

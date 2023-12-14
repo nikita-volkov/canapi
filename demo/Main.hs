@@ -4,6 +4,7 @@ import Canapi
 import Main.HCurrying
 import Prelude hiding (delete, get, head, put)
 
+main :: IO ()
 main = error "TODO"
 
 data Env
@@ -17,20 +18,20 @@ data Name
 root :: Env -> [Resource ()]
 root env =
   [ at "groups" [],
-    at "rpc" $
-      [ by nameSegment $
-          [ by nameSegment $
-              [ put validatedRpcSchemaSourceReceiver mempty (uncurryH . putRpcSchemaHandler),
-                get (error "TODO") (error "TODO"),
-                at "artifacts" $
-                  [ get (error "TODO") (error "TODO"),
-                    by languageSegment $
-                      [ get artifactsRenderer (uncurryH (getLanguageArtifacts env))
-                      ]
-                  ]
+    at "rpc"
+      $ [ by nameSegment
+            $ [ by nameSegment
+                  $ [ put validatedRpcSchemaSourceReceiver mempty (uncurryH . putRpcSchemaHandler),
+                      get (error "TODO") (error "TODO"),
+                      at "artifacts"
+                        $ [ get (error "TODO") (error "TODO"),
+                            by languageSegment
+                              $ [ get artifactsRenderer (uncurryH (getLanguageArtifacts env))
+                                ]
+                          ]
+                    ]
               ]
-          ]
-      ]
+        ]
   ]
 
 nameSegment :: Segment Name

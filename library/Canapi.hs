@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unused-top-binds -Wno-x-partial #-}
+
 module Canapi
   ( -- * Types
     Server,
@@ -102,10 +104,10 @@ newtype CookiesParser cookies
 
 data Receiver a
   = TypedReceiver
+      -- | Default type. Used when no content-type is provided.
       HttpMedia.MediaType
-      -- ^ Default type. Used when no content-type is provided.
+      -- | Map of decoders based on content-type.
       (Map HttpMedia.MediaType (Decoder a))
-      -- ^ Map of decoders based on content-type.
   | UntypedReceiver (Decoder a)
 
 type Decoder a = ByteString -> Either Text a
@@ -126,10 +128,10 @@ type Encoder a = a -> Wai.Response
 
 data Segment a
   = Segment
+      -- | Format names.
       [Text]
-      -- ^ Format names.
+      -- | Parser.
       (Attoparsec.Parser a)
-      -- ^ Parser.
 
 type Handler params response =
   params -> IO (Either Err response)
@@ -318,6 +320,7 @@ segment description = Segment [description]
 
 -------------------------
 
+unitTypedReceiver :: [HttpMedia.MediaType] -> Decoder a -> Receiver a
 unitTypedReceiver typeList decoder =
   TypedReceiver
     (Prelude.head typeList)
